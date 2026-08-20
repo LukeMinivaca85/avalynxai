@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v5.2-deploy";
+const CACHE = "ava-i-shell-v5.3-consolidated";
 const ASSETS = [
   "./",
   "./index.html",

@@ -2339,3 +2339,6 @@ body.ios .filter-pills::-webkit-scrollbar {
     padding-inline: 16px;
   }
 }
+
+/* v5.3 */
+#diagnoseElevenVoice { margin-left: 6px; }

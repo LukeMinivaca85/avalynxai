@@ -487,6 +487,7 @@ const els = {
   elevenVoiceModel: $("#elevenVoiceModel"),
   refreshElevenVoices: $("#refreshElevenVoices"),
   testElevenVoice: $("#testElevenVoice"),
+  diagnoseElevenVoice: $("#diagnoseElevenVoice"),
   elevenVoiceStatus: $("#elevenVoiceStatus")
 };
 
@@ -1440,7 +1441,22 @@ function openRouterReady() {
 }
 
 function elevenReady() {
-  return !!state.serverConfig?.elevenlabs || !!state.elevenApiKey;
+  const serverManaged = state.serverConfig?.elevenlabs === true;
+  const localKey = !!state.elevenApiKey && state.elevenApiKey !== "__server_managed__";
+  return serverManaged || localKey;
+}
+
+async function ensureServerElevenConfigFresh() {
+  if (state.serverConfig?.elevenlabs === true) return true;
+  if (state.elevenApiKey && state.elevenApiKey !== "__server_managed__") return true;
+  try { await loadServerConfig(); } catch {}
+  return elevenReady();
+}
+
+function elevenConfigLabel() {
+  if (state.serverConfig?.elevenlabs === true) return "ElevenLabs · servidor";
+  if (state.elevenApiKey && state.elevenApiKey !== "__server_managed__") return "ElevenLabs · chave local";
+  return "ElevenLabs · não configurada";
 }
 
 async function loadServerConfig() {
@@ -2314,12 +2330,11 @@ function ensureElevenReady() {
   if (manualVoiceId) state.elevenVoiceId = manualVoiceId;
 
   if (!elevenReady()) {
-    showToolGuard("Adicione sua chave ElevenLabs nas Configurações.");
-    openSettings();
+    showToolGuard("ElevenLabs não está disponível neste momento. O servidor não confirmou a configuração e nenhuma chave local foi fornecida.");
     return false;
   }
   if (!state.allowElevenUsage) {
-    showToolGuard("Ative “Permitir uso da ElevenLabs” nas Configurações.");
+    showToolGuard("Ative ‘Permitir uso da ElevenLabs’ nas Configurações. O recurso consome créditos.");
     openSettings();
     return false;
   }
@@ -2471,7 +2486,7 @@ async function streamElevenIntoMediaSource(res, mediaSource, audio) {
 }
 
 async function speakEleven(text, { messageId = null } = {}) {
-  if (!ensureElevenReady()) throw new Error("ElevenLabs não configurada.");
+  if (!ensureElevenReady()) throw new Error("Configuração de voz incompleta. Veja o aviso exibido pela Ava I.");
   const spoken = textForSpeech(text);
   if (!spoken) return;
 
@@ -2490,8 +2505,12 @@ async function speakEleven(text, { messageId = null } = {}) {
     : null;
   actionButton?.classList.add("tts-loading");
 
+  const isLikelyWebKitTouch = /iP(hone|ad|od)/i.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
   const canUseMSE =
-    typeof MediaSource !== "undefined"
+    !isLikelyWebKitTouch
+    && typeof MediaSource !== "undefined"
     && typeof MediaSource.isTypeSupported === "function"
     && MediaSource.isTypeSupported("audio/mpeg");
 
@@ -4160,16 +4179,41 @@ els.elevenVoiceModel.onchange = () => {
 };
 
 els.testElevenVoice.onclick = async () => {
-  if (!state.serverConfig?.elevenlabs) {
+  els.elevenVoiceStatus.textContent = "Verificando ElevenLabs…";
+
+  const providerReady = await ensureServerElevenConfigFresh();
+
+  if (state.serverConfig?.elevenlabs) {
+    state.elevenApiKey = "__server_managed__";
+  } else {
     state.elevenApiKey = els.elevenApiKey.value.trim();
   }
+
   state.rememberElevenKey = !!els.rememberElevenKey.checked;
   state.allowElevenUsage = !!els.allowElevenUsage.checked;
   state.elevenVoiceId = els.elevenVoiceIdManual?.value.trim() || els.elevenVoiceSelect.value || state.elevenVoiceId;
   state.elevenVoiceModel = els.elevenVoiceModel.value;
   persist();
 
-  els.elevenVoiceStatus.textContent = "Gerando teste…";
+  if (!providerReady) {
+    els.elevenVoiceStatus.textContent = "ElevenLabs indisponível no servidor.";
+    showToolGuard("/api/config não confirmou ElevenLabs e nenhuma chave local válida foi encontrada.");
+    return;
+  }
+
+  if (!state.allowElevenUsage) {
+    els.elevenVoiceStatus.textContent = "Ative o uso da ElevenLabs para testar.";
+    showToolGuard("Marque ‘Permitir uso da ElevenLabs’. O teste de voz consome créditos.");
+    return;
+  }
+
+  if (!state.elevenVoiceId) {
+    els.elevenVoiceStatus.textContent = "Selecione uma voz primeiro.";
+    await loadElevenVoices(true).catch(console.warn);
+    return;
+  }
+
+  els.elevenVoiceStatus.textContent = `${elevenConfigLabel()} · gerando teste…`;
 
   const onFirstAudio = () => {
     els.elevenVoiceStatus.textContent = "Tocando…";
@@ -4182,6 +4226,26 @@ els.testElevenVoice.onclick = async () => {
   } catch (err) {
     window.removeEventListener("avai:tts-first-audio", onFirstAudio);
     els.elevenVoiceStatus.textContent = String(err.message || err);
+  }
+};
+
+els.diagnoseElevenVoice.onclick = async () => {
+  els.elevenVoiceStatus.textContent = "Diagnosticando…";
+  try {
+    await loadServerConfig();
+    const configResponse = await fetch("/api/config", { cache: "no-store" });
+    const config = await configResponse.json();
+    if (!config?.elevenlabs) throw new Error("O servidor respondeu elevenlabs:false.");
+
+    const voicesResponse = await fetch("/api/eleven/voices?page_size=1");
+    if (!voicesResponse.ok) {
+      const detail = await voicesResponse.text();
+      throw new Error(`Voices ${voicesResponse.status}: ${detail.slice(0, 220)}`);
+    }
+
+    els.elevenVoiceStatus.textContent = "Servidor ElevenLabs OK ✓ · pronto para TTS";
+  } catch (error) {
+    els.elevenVoiceStatus.textContent = `Diagnóstico falhou: ${String(error?.message || error)}`;
   }
 };
 

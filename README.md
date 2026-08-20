@@ -444,3 +444,11 @@ Vercel was invoking the browser-side `app.js` inside the Node.js runtime. Since 
 - Non-API routes rewrite to `/index.html`.
 - Node is pinned to `22.x`.
 - Render remains supported through `server.mjs`.
+
+
+## v5.3 — Consolidated production voice fix
+- Server-managed ElevenLabs is treated as configured without a browser key.
+- Test voice refreshes /api/config before running.
+- Diagnostic button checks server config and voice endpoint without exposing secrets.
+- iOS/Safari uses the safer compatibility playback path.
+- Regression checks preserve KaTeX, widgets/table, writing/code blocks, attachments, Studio, auto rename, Render and Vercel deployment files.
