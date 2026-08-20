@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: ava-i
+    runtime: node
+    plan: free
+    buildCommand: npm run check
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: AVA_PUBLIC_URL
+        sync: false
+      - key: OPENROUTER_APP_NAME
+        value: "Ava I"

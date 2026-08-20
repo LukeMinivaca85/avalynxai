@@ -1,0 +1,27 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/config",
+      "destination": "/api/proxy?path=config"
+    },
+    {
+      "source": "/api/openrouter/:path*",
+      "destination": "/api/proxy?path=openrouter/:path*"
+    },
+    {
+      "source": "/api/eleven/:path*",
+      "destination": "/api/proxy?path=eleven/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ]
+}
