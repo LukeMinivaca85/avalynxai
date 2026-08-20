@@ -4,7 +4,10 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectBody, proxyRequest, pipeProxyResult, publicConfig } from "./server/proxy-core.mjs";
 
-const root = fileURLToPath(new URL(".", import.meta.url));
+const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+const root = existsSync(join(projectRoot, "dist", "index.html"))
+  ? join(projectRoot, "dist")
+  : projectRoot;
 const port = Number(process.env.PORT || 3000);
 
 const MIME = {

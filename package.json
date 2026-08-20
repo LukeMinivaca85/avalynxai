@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-static.mjs",
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check app.js && node --check server.mjs && node --check server/proxy-core.mjs"
+    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   }
 }

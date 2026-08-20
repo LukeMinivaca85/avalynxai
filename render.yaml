@@ -3,7 +3,7 @@ services:
     name: ava-i
     runtime: node
     plan: free
-    buildCommand: npm run check
+    buildCommand: npm run check && npm run build
     startCommand: npm start
     healthCheckPath: /api/config
     envVars:

@@ -425,3 +425,22 @@ The server proxy retries OpenRouter chat-completion responses with status `502`,
 ### Security
 
 The browser calls only same-origin `/api/*` routes. Provider credentials are injected server-side from environment variables.
+
+
+## v5.2.1 — Vercel `document is not defined` fix
+
+### Root cause
+
+Vercel was invoking the browser-side `app.js` inside the Node.js runtime. Since that file immediately accesses `document`, the function crashed with:
+
+`ReferenceError: document is not defined`
+
+### Fix
+
+- Added an explicit static build step.
+- Browser assets are copied to `dist/`.
+- `vercel.json` sets `outputDirectory` to `dist`.
+- Only files under `/api` are server-side functions.
+- Non-API routes rewrite to `/index.html`.
+- Node is pinned to `22.x`.
+- Render remains supported through `server.mjs`.
