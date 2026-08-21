@@ -3,9 +3,6 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectBody, proxyRequest, pipeProxyResult, publicConfig } from "./server/proxy-core.mjs";
-import { handleAvaCode } from "./server/modules/ava-code.mjs";
-import { handleBrowserLive } from "./server/modules/browser-live.mjs";
-import { handleAvaCreate } from "./server/modules/ava-create.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const root = existsSync(join(projectRoot, "dist", "index.html"))
@@ -34,24 +31,6 @@ function sendJSON(res, status, data) {
 }
 
 async function handleAPI(req, res, url) {
-  if (url.pathname.startsWith("/api/ava-code")) {
-    const raw = await collectBody(req);
-    let body = {};
-    try { body = raw?.length ? JSON.parse(Buffer.from(raw).toString("utf8")) : {}; } catch {}
-    return handleAvaCode(req, res, url, body);
-  }
-  if (url.pathname.startsWith("/api/browser-live")) {
-    const raw = await collectBody(req);
-    let body = {};
-    try { body = raw?.length ? JSON.parse(Buffer.from(raw).toString("utf8")) : {}; } catch {}
-    return handleBrowserLive(req, res, url, body);
-  }
-  if (url.pathname.startsWith("/api/create/")) {
-    const raw = await collectBody(req);
-    let body = {};
-    try { body = raw?.length ? JSON.parse(Buffer.from(raw).toString("utf8")) : {}; } catch {}
-    return handleAvaCreate(req, res, url, body);
-  }
 
   if (url.pathname === "/api/config") {
     sendJSON(res, 200, publicConfig());

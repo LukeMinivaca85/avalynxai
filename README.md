@@ -523,3 +523,32 @@ Equivalent full command:
 Start Command:
 
 `node server.mjs`
+
+
+## v6.1 — Ava Code is a product mode, not a terminal window
+The UI now has `Chat | Ava Code` in the main top bar. Ava Code uses a raw Qwen3-Coder-30B-A3B-Instruct checkpoint through an OpenAI-compatible local inference server. The model is not bundled in this ZIP because its weights are many gigabytes; the app points to your inference runtime with `AVA_CODE_BASE_URL`.
+
+Recommended model: `Qwen/Qwen3-Coder-30B-A3B-Instruct` (Apache-2.0). Example vLLM server: `vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct`. Then set `AVA_CODE_BASE_URL=http://YOUR_GPU_SERVER:8000/v1`.
+
+Render hosts the Ava web app; the Qwen model should run on a GPU host. This removes the old Playwright installation from the normal Render build.
+
+
+## v6.1.1 — Ava Code via OpenRouter
+
+Ava Code no longer requires a local Qwen/vLLM server.
+
+It uses the same server-side `OPENROUTER_API_KEY` already used by Ava Chat.
+
+Primary model:
+
+`qwen/qwen3-coder:free`
+
+Fallback:
+
+`openrouter/free`
+
+No `AVA_CODE_BASE_URL`, `AVA_CODE_MODEL`, or `AVA_CODE_API_KEY` environment variables are required.
+
+The visible product remains **Ava Code**; OpenRouter/Qwen are inference infrastructure and are identified in technical/runtime information.
+
+Because free OpenRouter routes can change availability, the client automatically falls back to `openrouter/free` when the Qwen Coder free route fails.

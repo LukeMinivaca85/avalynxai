@@ -66,6 +66,10 @@
     <main class="main">
       <header class="topbar">
         <button id="menuBtn" class="icon-btn mobile-only" aria-label="Abrir menu">☰</button>
+        <div class="ava-mode-switch" role="tablist" aria-label="Modo da Ava">
+          <button id="chatModeBtn" class="ava-mode-tab active" type="button" role="tab" aria-selected="true">Chat</button>
+          <button id="codeModeBtn" class="ava-mode-tab" type="button" role="tab" aria-selected="false">Ava Code</button>
+        </div>
         <button id="modelButton" class="model-button" aria-label="Abrir hub de modelos">
           <span id="modelLabel">Ava I · Ultra Free</span>
           <span class="chev">⌄</span>
@@ -555,5 +559,5 @@
   </template>
 
   <script type="module" src="app.js"></script>
-<div id="avaToolsDock" class="ava-tools-dock" hidden><div class="ava-tools-tabs"><button data-ava-tool="code">⌘ Ava Code</button><button data-ava-tool="browser">◎ Browser Live</button><button data-ava-tool="create">✦ Create</button><button id="avaToolsClose">×</button></div><div id="avaToolSurface" class="ava-tool-surface"></div></div></body>
+</body>
 </html>

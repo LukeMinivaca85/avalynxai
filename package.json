@@ -1,20 +1,17 @@
 {
   "name": "ava-i",
-  "version": "6.0.1",
+  "version": "6.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build-static.mjs",
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs && node --check modules/ava-code.js && node --check modules/browser-live.js && node --check modules/ava-create.js && node --check server/modules/ava-code.mjs && node --check server/modules/browser-live.mjs && node --check server/modules/ava-create.mjs",
-    "browser:install": "npx playwright install chromium",
-    "render:build": "npm install && npx playwright install --with-deps chromium && npm run check && npm run build"
+    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs",
+    "render:build": "npm install && npm run check && npm run build"
   },
   "engines": {
     "node": "22.x"
   },
-  "dependencies": {
-    "playwright": "^1.59.0"
-  }
+  "dependencies": {}
 }

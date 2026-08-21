@@ -1,6 +1,3 @@
-import { createAvaCodeClient, mountAvaCodePanel } from "./modules/ava-code.js";
-import { createBrowserLiveClient, mountBrowserLive } from "./modules/browser-live.js";
-import { createAvaCreateClient, mountAvaCreate } from "./modules/ava-create.js";
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
@@ -338,6 +335,7 @@ const state = {
   agents: [],
   activeAgentId: null,
   studioEditingId: null,
+  appMode: "chat",
   serverConfig: {
     loaded: false,
     openrouter: false,
@@ -529,6 +527,7 @@ function loadState() {
     state.elevenVoiceId = prefs.elevenVoiceId || "";
     state.elevenVoiceModel = prefs.elevenVoiceModel || "eleven_flash_v2_5";
     state.activeAgentId = prefs.activeAgentId || null;
+    state.appMode = prefs.appMode === "code" ? "code" : "chat";
     if (state.rememberKey) state.apiKey = localStorage.getItem("avai_api_key") || "";
     state.elevenApiKey = state.rememberElevenKey
       ? (localStorage.getItem("avai_eleven_api_key") || "")
@@ -638,6 +637,7 @@ function persist() {
     elevenVoiceId: state.elevenVoiceId,
     elevenVoiceModel: state.elevenVoiceModel,
     activeAgentId: state.activeAgentId,
+    appMode: state.appMode,
     promptVersion: DEFAULT_PROMPT_VERSION
   }));
   } catch (error) {
@@ -1718,7 +1718,8 @@ function makeChat() {
     messages: [],
     autoRenamed: false,
     autoRenameQuality: "pending",
-    agentId: state.activeAgentId || null
+    agentId: state.activeAgentId || null,
+    mode: state.appMode
   };
   chat.slug = uniqueChatSlug(chat.title, chat.id);
   state.chats.unshift(chat);
@@ -1817,9 +1818,10 @@ function appendMessageElement(msg, streaming = false) {
     });
   }
 
+  const currentChatMode = activeChat()?.mode || state.appMode;
   node.querySelector(".message-meta").textContent =
     msg.role === "assistant"
-      ? "Ava I"
+      ? (currentChatMode === "code" ? "Ava Code" : "Ava I")
       : attachments.length
         ? `Você · ${attachments.length} anexo${attachments.length === 1 ? "" : "s"}`
         : "Você";
@@ -3668,6 +3670,9 @@ async function sendCurrent() {
   if (shouldGenerateImage) {
     clearAcceptedAttachments();
     await generateImageResponse(chat, imagePrompt);
+  } else if ((chat.mode || state.appMode) === "code") {
+    clearAcceptedAttachments();
+    await generateAvaCode(chat, { messageId: userMsg.id, currentApiContent: apiContent });
   } else {
     await generateAssistant(chat, {
       messageId: userMsg.id,
@@ -3883,6 +3888,171 @@ Before finalizing, silently verify:
 }
 function webRequestNeedsFreshness(text) {
   return /\b(today|latest|most recent|now|current|hoje|mais recente|agora|atual|recentemente|últim[oa]|news|notícia|noticias|notícias)\b/i.test(String(text || ""));
+}
+
+
+const AVA_CODE_MODEL_LABEL = "Qwen3 Coder · OpenRouter";
+function syncAvaModeUI(){
+  const code=state.appMode==="code";
+  document.body.classList.toggle("ava-code-mode",code);
+  const cb=document.querySelector("#chatModeBtn"),kb=document.querySelector("#codeModeBtn");
+  cb?.classList.toggle("active",!code); kb?.classList.toggle("active",code);
+  cb?.setAttribute("aria-selected",String(!code)); kb?.setAttribute("aria-selected",String(code));
+  if(code){
+    els.modelLabel.textContent=AVA_CODE_MODEL_LABEL;
+    els.prompt.placeholder="Descreva uma tarefa de programação para o Ava Code";
+    const h=document.querySelector("#emptyState h1"),p=document.querySelector("#emptyState p");
+    if(h)h.textContent="O que vamos construir?";
+    if(p)p.textContent="Ava Code entende projetos, propõe alterações e trabalha como um agente de programação usando Qwen3 Coder pelo OpenRouter.";
+  }else{
+    els.modelLabel.textContent=state.modelLabel||DEFAULT_MODEL_LABEL;
+    els.prompt.placeholder="Mensagem para a Ava I";
+    const h=document.querySelector("#emptyState h1"),p=document.querySelector("#emptyState p");
+    if(h)h.textContent="O que vamos criar?";
+    if(p)p.textContent="Ava I combina raciocínio profundo, visão, arquivos e memória local em um único chat.";
+  }
+}
+function setAvaMode(mode){
+  state.appMode=mode==="code"?"code":"chat";
+  const chat=activeChat();
+  if(chat && chat.messages.length===0) chat.mode=state.appMode;
+  persist();syncAvaModeUI();renderAll();
+}
+function codeActivity(node,text,status="running"){
+  let wrap=node.querySelector(".ava-code-activity");
+  if(!wrap){wrap=document.createElement("div");wrap.className="ava-code-activity";node.querySelector(".message-body")?.insertBefore(wrap,node.querySelector(".message-content"));}
+  const row=document.createElement("div");row.className="ava-code-step "+status;row.innerHTML=`<span class="ava-code-step-dot"></span><span>${escapeHtml(text)}</span>`;wrap.appendChild(row);return row;
+}
+async function generateAvaCode(chat,requestContext=null){
+  state.generating=true;
+  state.controller=new AbortController();
+  els.sendIcon.textContent="■";
+  els.send.title="Parar";
+
+  const assistantMsg={
+    id:uid(),
+    role:"assistant",
+    content:"",
+    createdAt:Date.now(),
+    codeMode:true
+  };
+
+  chat.messages.push(assistantMsg);
+  persist();
+  els.empty.classList.add("hidden");
+
+  const node=appendMessageElement(assistantMsg,true);
+  const contentNode=node.querySelector(".message-content");
+  const thinking=codeActivity(node,"Analisando a tarefa com Qwen3 Coder…");
+  scrollToBottom();
+
+  try{
+    if(!openRouterReady()){
+      throw new Error("OpenRouter não está configurado no servidor.");
+    }
+
+    const baseMessages=toApiMessages(chat,requestContext).slice(0,-1);
+    baseMessages.unshift({
+      role:"system",
+      content:`You are the reasoning model inside Ava Code, an agentic coding product by Avalynx.
+
+Your job is software engineering: understand codebases, plan changes, write precise code, reason about bugs, propose patches, tests, and verification steps.
+
+Rules:
+- Never claim a command ran, a file changed, or a test passed unless tool output proves it.
+- Prefer complete, directly usable code and patches.
+- Identify files that should change.
+- Preserve existing architecture unless a refactor is justified.
+- Think like a coding agent, not a generic chatbot.
+- The product identity is Ava Code. The underlying inference model is Qwen3 Coder when available through OpenRouter.`
+    });
+
+    const candidates=[
+      "qwen/qwen3-coder:free",
+      "openrouter/free"
+    ];
+
+    let data=null;
+    let selectedModel=null;
+    let lastError=null;
+
+    for(const model of candidates){
+      const step=codeActivity(node,`Tentando ${model}…`);
+
+      try{
+        const res=await fetch("/api/openrouter/chat/completions",{
+          method:"POST",
+          headers:{"content-type":"application/json"},
+          body:JSON.stringify({
+            model,
+            messages:baseMessages,
+            max_tokens:8192,
+            temperature:0.2
+          }),
+          signal:state.controller.signal
+        });
+
+        const payload=await res.json().catch(()=>({}));
+
+        if(!res.ok){
+          const message=
+            payload?.error?.message ||
+            payload?.error ||
+            `OpenRouter ${res.status}`;
+
+          step.classList.remove("running");
+          step.classList.add("error");
+          step.querySelector("span:last-child").textContent=`${model} indisponível`;
+          lastError=new Error(String(message));
+          continue;
+        }
+
+        data=payload;
+        selectedModel=data?.model || model;
+        step.classList.remove("running");
+        step.classList.add("done");
+        step.querySelector("span:last-child").textContent=`Modelo selecionado: ${selectedModel}`;
+        break;
+      }catch(error){
+        if(error?.name==="AbortError") throw error;
+        lastError=error;
+        step.classList.remove("running");
+        step.classList.add("error");
+        step.querySelector("span:last-child").textContent=`Falha em ${model}`;
+      }
+    }
+
+    if(!data){
+      throw lastError || new Error("Nenhum modelo gratuito de coding ficou disponível.");
+    }
+
+    thinking.classList.remove("running");
+    thinking.classList.add("done");
+    thinking.querySelector("span:last-child").textContent="Ava Code concluiu o raciocínio";
+
+    assistantMsg.content=data?.choices?.[0]?.message?.content || "";
+    assistantMsg.model=selectedModel || "qwen/qwen3-coder:free";
+
+    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    contentNode.classList.remove("typing-cursor");
+    finalizeRichMessage(node);
+    persist();
+
+    await maybeAutoRenameChat(chat).catch(console.warn);
+  }catch(e){
+    assistantMsg.content=`Ava Code não conseguiu responder: ${String(e.message||e)}`;
+    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    contentNode.classList.remove("typing-cursor");
+    thinking.classList.add("error");
+    persist();
+  }finally{
+    state.generating=false;
+    state.controller=null;
+    els.sendIcon.textContent="↑";
+    els.send.title="Enviar";
+    renderChatList();
+    scrollToBottom();
+  }
 }
 
 async function generateAssistant(chat, requestContext = null) {
@@ -4630,6 +4800,10 @@ $$(".filter-pill").forEach(btn => {
 });
 
 
+
+document.querySelector("#chatModeBtn")?.addEventListener("click",()=>setAvaMode("chat"));
+document.querySelector("#codeModeBtn")?.addEventListener("click",()=>setAvaMode("code"));
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.warn));
 }
@@ -4651,6 +4825,7 @@ async function bootstrapAva() {
     }
   }
 
+  syncAvaModeUI();
   renderAll();
   renderAgentList();
   syncActiveAgentUI();
@@ -4695,17 +4870,6 @@ if (els.allowPaidTools) {
     persist();
   });
 }
-
-const avaCodeClientV6=createAvaCodeClient(),browserLiveClientV6=createBrowserLiveClient(),avaCreateClientV6=createAvaCreateClient();
-function openAvaToolV6(kind){const dock=document.querySelector("#avaToolsDock"),surface=document.querySelector("#avaToolSurface");if(!dock||!surface)return;dock.hidden=false;if(kind==="code")mountAvaCodePanel(surface,avaCodeClientV6);if(kind==="browser")mountBrowserLive(surface,browserLiveClientV6);if(kind==="create")mountAvaCreate(surface,avaCreateClientV6)}
-document.querySelectorAll("[data-ava-tool]").forEach(b=>b.addEventListener("click",()=>openAvaToolV6(b.dataset.avaTool)));
-document.querySelector("#avaToolsClose")?.addEventListener("click",()=>document.querySelector("#avaToolsDock").hidden=true);
-function ensureAvaCodeAgentV6(){if(Array.isArray(state.agents)&&!state.agents.some(a=>a.builtin==="ava-code")){state.agents.unshift({id:"builtin-ava-code",name:"Ava Code",description:"Agente de programação com workspace seguro.",instructions:"Planeje antes de editar. Preserve arquivos. Peça aprovação antes de executar comandos.",builtin:"ava-code",pinned:true,createdAt:Date.now()});persist()}}
-function renderPinnedAgentsMenuV6(){const m=document.querySelector("#agentPinsMenu");if(!m||!Array.isArray(state.agents))return;m.innerHTML="";const p=state.agents.filter(a=>a.pinned);if(!p.length)m.innerHTML='<div class="agent-pin-empty">Nenhum agente fixado</div>';p.forEach(a=>{const b=document.createElement("button");b.className="agent-pin-row";b.textContent=a.name||"Agente";b.onclick=()=>{state.activeAgentId=a.id;persist();m.hidden=true;if(a.builtin==="ava-code")openAvaToolV6("code")};m.append(b)})}
-document.querySelector("#agentPinsToggle")?.addEventListener("click",()=>{const m=document.querySelector("#agentPinsMenu");renderPinnedAgentsMenuV6();m.hidden=!m.hidden});
-document.addEventListener("keydown",e=>{if(!e.altKey)return;const k=e.key.toLowerCase();if(k==="c"){e.preventDefault();openAvaToolV6("code")}if(k==="b"){e.preventDefault();openAvaToolV6("browser")}if(k==="g"){e.preventDefault();openAvaToolV6("create")}});
-queueMicrotask(()=>{ensureAvaCodeAgentV6();renderPinnedAgentsMenuV6()});
-
 
 // v6.0.1 — visible module boot diagnostics.
 window.addEventListener("error", event => {

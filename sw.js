@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.0.1-buttons-fix";
+const CACHE = "ava-i-shell-v6.1.1-openrouter-code";
 const ASSETS = [
   "./",
   "./index.html",
