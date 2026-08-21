@@ -452,3 +452,41 @@ Vercel was invoking the browser-side `app.js` inside the Node.js runtime. Since 
 - Diagnostic button checks server config and voice endpoint without exposing secrets.
 - iOS/Safari uses the safer compatibility playback path.
 - Regression checks preserve KaTeX, widgets/table, writing/code blocks, attachments, Studio, auto rename, Render and Vercel deployment files.
+
+
+## v5.4 — Human-readable chat URLs
+
+Chat URLs now use the auto-generated chat title instead of exposing the internal UUID.
+
+Examples:
+
+- `/c/equacao-de-logaritmos`
+- `/c/configurando-elevenlabs`
+- `/c/avalynx-studio`
+- `/c/equacao-de-logaritmos-2` when a slug already exists.
+
+The internal UUID is still retained for stable local identity and data relationships, but it is no longer used in the visible URL.
+
+Behavior:
+- New chats begin with a temporary `/c/novo-chat` slug.
+- After Auto Rename completes, the active URL is replaced with the semantic slug.
+- Existing chats get a slug automatically on load.
+- Browser Back/Forward changes the active chat.
+- Direct navigation to `/c/<slug>` restores that chat from local history.
+- Vercel/Render SPA fallback already routes `/c/*` to `index.html`.
+
+
+## v5.5 — Widget persistence, auto table promotion, syntax colors
+
+- `ava-widget` parsing accepts aliases and slightly looser JSON wrapping.
+- Markdown tables are automatically promoted to the same native pretty table widget.
+- Up to four native widgets can render per assistant message.
+- Table widgets have sticky headers, alternating row surfaces, hover feedback and horizontal mobile scrolling.
+- Code blocks now use built-in syntax highlighting with the Ava palette:
+  - pink: keywords/tags
+  - purple: functions/constants/classes
+  - green: strings/comments
+  - blue: numbers/properties/attributes
+  - white: punctuation and normal identifiers
+- No external syntax-highlighting CDN is required.
+- Regression checks preserve KaTeX, ElevenLabs server mode, Studio, chat slugs, attachments and deployment files.

@@ -1,6 +1,61 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+function sendAvalynxNativeEvent(payload) {
+  const event = {
+    source: "avalynx-web",
+    timestamp: Date.now(),
+    ...payload
+  };
+
+  try {
+    if (window.webkit?.messageHandlers?.avalynx) {
+      window.webkit.messageHandlers.avalynx.postMessage(event);
+      return true;
+    }
+  } catch (error) {
+    console.warn("Avalynx native bridge iOS:", error);
+  }
+
+  try {
+    if (window.AvalynxNative?.postMessage) {
+      window.AvalynxNative.postMessage(JSON.stringify(event));
+      return true;
+    }
+  } catch (error) {
+    console.warn("Avalynx native bridge Android:", error);
+  }
+
+  return false;
+}
+
+function sendThinkingNativeEvent(active, title = "Ava esta pensando") {
+  sendAvalynxNativeEvent({
+    type: "thinking",
+    active,
+    title
+  });
+}
+
+function sendTTSNativeEvent(stateName, audio = null, title = "Ava lendo") {
+  sendAvalynxNativeEvent({
+    type: "tts",
+    state: stateName,
+    title,
+    elapsed: Number.isFinite(audio?.currentTime) ? audio.currentTime : 0,
+    duration: Number.isFinite(audio?.duration) ? audio.duration : 0
+  });
+}
+
+function sendVoixNativeEvent(phase, level = 0.5, title = "Avalynx Voix") {
+  sendAvalynxNativeEvent({
+    type: "voix",
+    state: phase,
+    title,
+    level: Math.max(0, Math.min(1, Number(level) || 0))
+  });
+}
+
 const DEFAULT_PROMPT_VERSION = 5;
 const DEFAULT_SYSTEM_PROMPT = `You are Ava I, an advanced general-purpose artificial intelligence assistant created by Lukintosh Corporation.
 
@@ -257,6 +312,9 @@ Supported widget types:
 TABLE RULE:
 - When structured comparison data is naturally tabular, use the native table widget instead of a Markdown table.
 - Do not duplicate the same full table in Markdown and in a widget.
+- IMPORTANT UI CONTRACT: whenever you produce a comparison with 2 or more rows and 2 or more columns, emit an ava-widget table.
+- When a compact set of metrics, key facts, steps, or warnings would scan better visually, emit the matching native widget.
+- The client can also promote Markdown tables automatically, but native ava-widget is preferred.
 - Keep essential conclusions in normal prose.
 - Maximum 8 columns and 30 rows.
 
@@ -357,6 +415,7 @@ const state = {
   ttsMessageId: null,
   ttsAbortController: null,
   ttsObjectURL: null,
+  ttsNativeTimer: 0,
   voix: {
     active: false,
     phase: "idle",
@@ -368,6 +427,7 @@ const state = {
     analyser: null,
     source: null,
     vadFrame: 0,
+    lastNativeLevelAt: 0,
     startedAt: 0,
     lastSoundAt: 0,
     hasSpeech: false
@@ -498,6 +558,7 @@ function uid() {
 function loadState() {
   try {
     state.chats = JSON.parse(localStorage.getItem("avai_chats") || "[]");
+    state.chats.forEach(chat => ensureChatSlug(chat));
     state.agents = JSON.parse(localStorage.getItem("avai_agents") || "[]");
     const prefs = JSON.parse(localStorage.getItem("avai_prefs") || "{}");
     if (prefs.modelVersion === DEFAULT_MODEL_VERSION) {
@@ -546,6 +607,7 @@ function isStorageQuotaError(error) {
 function chatsForPersistence({ stripPreviews = false } = {}) {
   return state.chats.map(chat => ({
     ...chat,
+    slug: ensureChatSlug(chat),
     messages: (chat.messages || []).map(message => {
       const copy = { ...message };
 
@@ -949,7 +1011,22 @@ function normalizeAnnotations(list) {
 const RICH_WIDGET_TYPES = new Set(["callout", "stats", "list", "key_value", "progress", "table"]);
 function safeWidgetText(value, max = 500) { return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max); }
 function normalizeWidget(raw) {
-  if (!raw || typeof raw !== "object" || !RICH_WIDGET_TYPES.has(raw.type)) return null;
+  if (!raw || typeof raw !== "object") return null;
+
+  const aliases = {
+    keyvalue: "key_value",
+    "key-value": "key_value",
+    kv: "key_value",
+    table_widget: "table",
+    tablewidget: "table",
+    metrics: "stats"
+  };
+
+  const requestedType = String(raw.type || "").trim().toLowerCase();
+  const type = aliases[requestedType] || requestedType;
+  if (!RICH_WIDGET_TYPES.has(type)) return null;
+
+  raw = { ...raw, type };
   const title = safeWidgetText(raw.title, 120);
   if (raw.type === "callout") {
     const tone = ["info","success","warning"].includes(raw.tone) ? raw.tone : "info";
@@ -984,21 +1061,110 @@ function normalizeWidget(raw) {
   }
   return null;
 }
+
+function splitMarkdownTableRow(line) {
+  const text = String(line || "").trim();
+  if (!text.includes("|")) return [];
+  const normalized = text.replace(/^\|/, "").replace(/\|$/, "");
+  return normalized.split(/(?<!\\)\|/).map(cell =>
+    cell.replace(/\\\|/g, "|").trim()
+  );
+}
+
+function isMarkdownTableSeparator(line, expectedColumns = 0) {
+  const cells = splitMarkdownTableRow(line);
+  if (expectedColumns && cells.length !== expectedColumns) return false;
+  return cells.length >= 2 && cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+function extractMarkdownTables(text) {
+  const lines = String(text || "").split("\n");
+  const widgets = [];
+  const output = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const header = splitMarkdownTableRow(lines[i]);
+    const separator = lines[i + 1];
+
+    if (
+      header.length >= 2
+      && separator != null
+      && isMarkdownTableSeparator(separator, header.length)
+    ) {
+      const rows = [];
+      let cursor = i + 2;
+
+      while (cursor < lines.length) {
+        const cells = splitMarkdownTableRow(lines[cursor]);
+        if (cells.length !== header.length) break;
+        rows.push(cells);
+        cursor += 1;
+      }
+
+      if (rows.length) {
+        widgets.push({
+          type: "table",
+          title: "Tabela",
+          columns: header,
+          rows
+        });
+        i = cursor - 1;
+        continue;
+      }
+    }
+
+    output.push(lines[i]);
+  }
+
+  return {
+    text: output.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    widgets
+  };
+}
+
+function parseLooseWidgetJSON(raw) {
+  const source = String(raw || "").trim();
+  if (!source) return null;
+
+  try { return JSON.parse(source); } catch {}
+
+  // Some models wrap the JSON in an extra `json` fence inside ava-widget.
+  const cleaned = source
+    .replace(/^```json\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try { return JSON.parse(cleaned); } catch {}
+  return null;
+}
+
 function extractRichWidgets(msg) {
   if (!msg || typeof msg.content !== "string") return;
-  const widgets = [];
-  msg.content = msg.content.replace(/```ava-widget\s*([\s\S]*?)```/gi, (_, raw) => {
-    try {
-      const widget = normalizeWidget(JSON.parse(raw.trim()));
-      if (widget && widgets.length < 3) widgets.push(widget);
-    } catch (error) {
-      console.warn("Invalid Ava widget ignored:", error);
-    }
-    return "";
-  }).replace(/\n{3,}/g, "\n\n").trim();
 
-  // Rebuild from the current answer so stale or duplicate widgets do not hide the new ones.
-  msg.widgets = widgets.slice(0, 3);
+  const widgets = [];
+  let content = msg.content;
+
+  // Native ava-widget blocks.
+  content = content.replace(/```ava-widget\s*([\s\S]*?)```/gi, (_, raw) => {
+    const parsed = parseLooseWidgetJSON(raw);
+    const widget = normalizeWidget(parsed);
+    if (widget && widgets.length < 4) widgets.push(widget);
+    else if (raw.trim()) console.warn("Invalid Ava widget ignored:", raw.slice(0, 180));
+    return "";
+  });
+
+  // Fallback: if the model emitted a Markdown table, promote it to the
+  // same native table widget instead of leaving an ugly plain table/text.
+  const markdownTables = extractMarkdownTables(content);
+  content = markdownTables.text;
+
+  for (const table of markdownTables.widgets) {
+    const normalized = normalizeWidget(table);
+    if (normalized && widgets.length < 4) widgets.push(normalized);
+  }
+
+  msg.content = content.replace(/\n{3,}/g, "\n\n").trim();
+  msg.widgets = widgets.slice(0, 4);
 }
 function contentWithoutPendingWidgets(text) {
   let value=String(text||"").replace(/```ava-widget\s*[\s\S]*?```/gi,"");
@@ -1016,6 +1182,8 @@ function renderWidget(w){
   if(w.type==="progress"){const top=document.createElement("div");top.className="ava-progress-top";const l=document.createElement("span");l.textContent=w.label;const n=document.createElement("span");n.textContent=`${Math.round(w.value/w.max*100)}%`;top.append(l,n);const tr=document.createElement("div");tr.className="ava-progress-track";const f=document.createElement("div");f.className="ava-progress-fill";f.style.width=`${Math.max(0,Math.min(100,w.value/w.max*100))}%`;tr.appendChild(f);card.append(top,tr);}
   if(w.type==="table"){
     card.classList.add("ava-table-widget");
+    card.setAttribute("role", "region");
+    card.setAttribute("aria-label", w.title || "Tabela");
     const scroll=document.createElement("div");scroll.className="ava-table-scroll";
     const table=document.createElement("table");table.className="ava-table";
     const thead=document.createElement("thead");const hr=document.createElement("tr");
@@ -1508,6 +1676,89 @@ async function loadServerConfig() {
   }
 }
 
+
+function slugifyChatTitle(title) {
+  return String(title || "novo-chat")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "novo-chat";
+}
+
+function uniqueChatSlug(baseTitle, chatId = null) {
+  const base = slugifyChatTitle(baseTitle);
+  const used = new Set(
+    state.chats
+      .filter(chat => chat.id !== chatId)
+      .map(chat => chat.slug)
+      .filter(Boolean)
+  );
+
+  if (!used.has(base)) return base;
+
+  let n = 2;
+  while (used.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
+function ensureChatSlug(chat) {
+  if (!chat) return "";
+  if (!chat.slug) {
+    chat.slug = uniqueChatSlug(chat.title || "novo-chat", chat.id);
+  }
+  return chat.slug;
+}
+
+function updateChatSlugFromTitle(chat, { force = false } = {}) {
+  if (!chat) return "";
+  const next = uniqueChatSlug(chat.title || "novo-chat", chat.id);
+
+  // Preserve existing URL unless explicitly updating after a rename.
+  if (force || !chat.slug || chat.slug === "novo-chat") {
+    chat.slug = next;
+  }
+
+  return chat.slug;
+}
+
+function chatBySlug(slug) {
+  const wanted = decodeURIComponent(String(slug || "")).toLowerCase();
+  return state.chats.find(chat => ensureChatSlug(chat).toLowerCase() === wanted) || null;
+}
+
+function chatURL(chat) {
+  return `/c/${encodeURIComponent(ensureChatSlug(chat))}`;
+}
+
+function syncChatURL(chat = activeChat(), { replace = false } = {}) {
+  if (!chat || !history?.pushState) return;
+
+  const target = chatURL(chat);
+  if (location.pathname === target) return;
+
+  const method = replace ? "replaceState" : "pushState";
+  history[method]({ chatId: chat.id, slug: chat.slug }, "", target);
+}
+
+function activateChatFromURL({ replaceInvalid = true } = {}) {
+  const match = location.pathname.match(/^\/c\/([^/?#]+)\/?$/i);
+  if (!match) return false;
+
+  const chat = chatBySlug(match[1]);
+
+  if (chat) {
+    state.activeId = chat.id;
+    return true;
+  }
+
+  if (replaceInvalid) {
+    history.replaceState({}, "", "/");
+  }
+  return false;
+}
+
 function activeChat() {
   return state.chats.find(c => c.id === state.activeId);
 }
@@ -1516,12 +1767,14 @@ function makeChat() {
   const chat = {
     id: uid(),
     title: "Novo chat",
+    slug: "",
     createdAt: Date.now(),
     messages: [],
     autoRenamed: false,
     autoRenameQuality: "pending",
     agentId: state.activeAgentId || null
   };
+  chat.slug = uniqueChatSlug(chat.title, chat.id);
   state.chats.unshift(chat);
   state.activeId = chat.id;
   persist();
@@ -1562,6 +1815,9 @@ function renderChatList() {
       if (state.activeId === chat.id) state.activeId = state.chats[0]?.id || null;
       persist();
       renderAll();
+      const current = activeChat();
+      if (current) syncChatURL(current, { replace: true });
+      else if (location.pathname !== "/") history.replaceState({}, "", "/");
     };
     els.chatList.appendChild(row);
   });
@@ -1680,6 +1936,11 @@ function appendMessageElement(msg, streaming = false) {
     if (!action) return;
     if (action === "copy") {
       await navigator.clipboard?.writeText(msg.content || "");
+      sendAvalynxNativeEvent({
+        type: "copied",
+        text: "Mensagem copiada",
+        value: msg.content || ""
+      });
       const btn = actionButton;
       if (btn) {
         btn.classList.add("action-done");
@@ -1709,6 +1970,99 @@ function appendMessageElement(msg, streaming = false) {
   els.messages.appendChild(node);
   finalizeRichMessage(node);
   return node;
+}
+
+
+function syntaxToken(className, text) {
+  return `<span class="syn-${className}">${escapeHtml(String(text || ""))}</span>`;
+}
+
+function highlightGenericCode(code, language = "") {
+  const source = String(code || "");
+  const lang = String(language || "").toLowerCase();
+
+  const keywordSets = {
+    javascript: new Set("break case catch class const continue debugger default delete do else export extends finally for function if import in instanceof let new return static super switch this throw try typeof var void while with yield async await of true false null undefined".split(" ")),
+    js: new Set("break case catch class const continue debugger default delete do else export extends finally for function if import in instanceof let new return static super switch this throw try typeof var void while with yield async await of true false null undefined".split(" ")),
+    typescript: new Set("abstract any as assert bigint boolean break case catch class const constructor continue debugger declare default delete do else enum export extends false finally for from function get if implements import in infer instanceof interface is keyof let module namespace never new null number object of override package private protected public readonly require return set static string super switch symbol this throw true try type typeof undefined unique unknown var void while with yield async await".split(" ")),
+    ts: new Set("abstract any as assert bigint boolean break case catch class const constructor continue debugger declare default delete do else enum export extends false finally for from function get if implements import in infer instanceof interface is keyof let module namespace never new null number object of override package private protected public readonly require return set static string super switch symbol this throw true try type typeof undefined unique unknown var void while with yield async await".split(" ")),
+    python: new Set("and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield".split(" ")),
+    py: new Set("and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield".split(" ")),
+    sql: new Set("select from where join inner left right full outer on as insert into update set delete create alter drop table view index distinct group by order having limit offset union all case when then else end and or not null is in exists like between values primary key foreign references constraint".split(" ")),
+    bash: new Set("if then else elif fi for while in do done case esac function select time until coproc readonly local export unset return break continue".split(" ")),
+    sh: new Set("if then else elif fi for while in do done case esac function select time until coproc readonly local export unset return break continue".split(" "))
+  };
+
+  if (["html", "xml", "svg"].includes(lang)) {
+    const escaped = escapeHtml(source);
+    return escaped
+      .replace(/(&lt;\/?)([a-zA-Z][\w:-]*)/g, '$1<span class="syn-pink">$2</span>')
+      .replace(/\s([a-zA-Z_:][-\w:.]*)(=)/g, ' <span class="syn-blue">$1</span>$2')
+      .replace(/(&quot;[^&]*?&quot;|&#039;[^&]*?&#039;)/g, '<span class="syn-green">$1</span>');
+  }
+
+  if (lang === "css") {
+    const escaped = escapeHtml(source);
+    return escaped
+      .replace(/(^|\})(\s*[^@\n{}][^{}]*)(\{)/gm, '$1<span class="syn-pink">$2</span>$3')
+      .replace(/([\w-]+)(\s*:)/g, '<span class="syn-blue">$1</span>$2')
+      .replace(/(#(?:[0-9a-fA-F]{3,8})\b|\b\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%|s|ms)?\b)/g, '<span class="syn-purple">$1</span>')
+      .replace(/(&quot;[^&]*?&quot;|&#039;[^&]*?&#039;)/g, '<span class="syn-green">$1</span>');
+  }
+
+  if (lang === "json") {
+    const escaped = escapeHtml(source);
+    return escaped
+      .replace(/(&quot;[^&]*?&quot;)(\s*:)/g, '<span class="syn-blue">$1</span>$2')
+      .replace(/(:\s*)(&quot;[^&]*?&quot;)/g, '$1<span class="syn-green">$2</span>')
+      .replace(/\b(true|false|null)\b/g, '<span class="syn-purple">$1</span>')
+      .replace(/\b(-?\d+(?:\.\d+)?)\b/g, '<span class="syn-pink">$1</span>');
+  }
+
+  const keywords = keywordSets[lang] || keywordSets.javascript;
+  const tokenRx = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|--[^\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*\b)/g;
+
+  let html = "";
+  let last = 0;
+  const matches = [...source.matchAll(tokenRx)];
+
+  matches.forEach((match, index) => {
+    const token = match[0];
+    const start = match.index;
+    html += escapeHtml(source.slice(last, start));
+
+    if (/^(\/\/|\/\*|#|--)/.test(token)) {
+      html += syntaxToken("green", token);
+    } else if (/^['"`]/.test(token)) {
+      html += syntaxToken("green", token);
+    } else if (/^-?\d/.test(token)) {
+      html += syntaxToken("blue", token);
+    } else if (keywords.has(token) || keywords.has(token.toLowerCase())) {
+      html += syntaxToken("pink", token);
+    } else {
+      const rest = source.slice(start + token.length);
+      const prev = source.slice(Math.max(0, start - 1), start);
+      if (/^\s*\(/.test(rest)) html += syntaxToken("purple", token);
+      else if (prev === ".") html += syntaxToken("blue", token);
+      else if (/^[A-Z][A-Za-z0-9_$]*$/.test(token)) html += syntaxToken("purple", token);
+      else html += escapeHtml(token);
+    }
+
+    last = start + token.length;
+  });
+
+  html += escapeHtml(source.slice(last));
+  return html;
+}
+
+function highlightCodeBlocks(scope) {
+  if (!scope) return;
+  scope.querySelectorAll(".code-wrap code[data-language]").forEach(code => {
+    if (code.dataset.highlighted === "1") return;
+    const source = code.textContent || "";
+    code.innerHTML = highlightGenericCode(source, code.dataset.language || "");
+    code.dataset.highlighted = "1";
+  });
 }
 
 function wireCodeCopy(scope) {
@@ -1800,7 +2154,7 @@ function renderMarkdown(text) {
           <span>${escapeHtml(block.language)}</span>
           <button type="button" data-copy-code>Copiar</button>
         </div>
-        <pre><code>${escapeHtml(block.content)}</code></pre>
+        <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(block.content)}</code></pre>
       </section>`;
     }
 
@@ -1891,6 +2245,7 @@ function wireWritingCopy(scope) {
 }
 
 function finalizeRichMessage(scope) {
+  highlightCodeBlocks(scope);
   wireCodeCopy(scope);
   wireWritingCopy(scope);
 
@@ -1992,8 +2347,10 @@ async function autoRenameChat(chat) {
 
   if (!openRouterReady()) {
     chat.title = fallback;
+    updateChatSlugFromTitle(chat, { force: true });
     chat.autoRenamed = true;
     chat.autoRenameQuality = "fallback";
+    if (chat.id === state.activeId) syncChatURL(chat, { replace: true });
     persist();
     renderChatList();
     return;
@@ -2055,13 +2412,17 @@ ${conversation}`
     }
 
     chat.title = generated;
+    updateChatSlugFromTitle(chat, { force: true });
     chat.autoRenamed = true;
     chat.autoRenameQuality = "ai";
+    if (chat.id === state.activeId) syncChatURL(chat, { replace: true });
   } catch (error) {
     console.warn("Auto rename fallback:", error);
     chat.title = fallback;
+    updateChatSlugFromTitle(chat, { force: true });
     chat.autoRenamed = true;
     chat.autoRenameQuality = "fallback";
+    if (chat.id === state.activeId) syncChatURL(chat, { replace: true });
   } finally {
     persist();
     renderChatList();
@@ -2370,6 +2731,11 @@ function stopTTS() {
   try { state.ttsAbortController?.abort(); } catch {}
   state.ttsAbortController = null;
 
+  if (state.ttsNativeTimer) {
+    clearInterval(state.ttsNativeTimer);
+    state.ttsNativeTimer = 0;
+  }
+
   if (state.ttsAudio) {
     try {
       state.ttsAudio.pause();
@@ -2386,6 +2752,24 @@ function stopTTS() {
   state.ttsAudio = null;
   state.ttsMessageId = null;
   clearTTSButtons();
+  sendTTSNativeEvent("stopped", null, "Ava pausada");
+}
+
+function bindNativeTTSProgress(audio, title = "Ava lendo") {
+  if (!audio) return;
+  if (state.ttsNativeTimer) clearInterval(state.ttsNativeTimer);
+
+  const update = () => sendTTSNativeEvent("playing", audio, title);
+  update();
+  audio.addEventListener("loadedmetadata", update, { once: true });
+  audio.addEventListener("timeupdate", update);
+  audio.addEventListener("play", update);
+  audio.addEventListener("ended", () => sendTTSNativeEvent("ended", audio, "Ava concluiu"), { once: true });
+  audio.addEventListener("pause", () => {
+    if (!audio.ended) sendTTSNativeEvent("paused", audio, "Ava pausada");
+  });
+
+  state.ttsNativeTimer = setInterval(update, 1000);
 }
 
 function waitSourceBuffer(sourceBuffer) {
@@ -2504,6 +2888,7 @@ async function speakEleven(text, { messageId = null } = {}) {
     ? document.querySelector(`.message[data-id="${CSS.escape(messageId)}"] [data-action="read"]`)
     : null;
   actionButton?.classList.add("tts-loading");
+  sendTTSNativeEvent("loading", null, "Preparando voz da Ava");
 
   const isLikelyWebKitTouch = /iP(hone|ad|od)/i.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -2529,6 +2914,7 @@ async function speakEleven(text, { messageId = null } = {}) {
 
     state.ttsAudio = audio;
     state.ttsObjectURL = objectURL;
+    bindNativeTTSProgress(audio);
 
     immediatePlayPromise = audio.play().catch(err => {
       console.warn("Early TTS play waiting/blocked:", err);
@@ -2579,6 +2965,7 @@ async function speakEleven(text, { messageId = null } = {}) {
 
       state.ttsAudio = audio;
       state.ttsObjectURL = objectURL;
+      bindNativeTTSProgress(audio);
 
       actionButton?.classList.remove("tts-loading");
       actionButton?.classList.add("speaking");
@@ -3032,6 +3419,7 @@ function setVoixUI(phase, status, hint = "") {
   if (els.voixDialog) els.voixDialog.dataset.phase = phase;
   if (els.voixStatus) els.voixStatus.textContent = status;
   if (els.voixHint) els.voixHint.textContent = hint;
+  sendVoixNativeEvent(phase, phase === "listening" ? 0.35 : phase === "speaking" ? 0.85 : 0.55);
 }
 
 function preferredRecordingMime() {
@@ -3089,6 +3477,11 @@ function startVoixVAD() {
       state.voix.hasSpeech = true;
       state.voix.lastSoundAt = now;
       if (els.voixTranscript && !els.voixTranscript.textContent) els.voixTranscript.textContent = "Ouvindo você…";
+    }
+
+    if (now - state.voix.lastNativeLevelAt > 180) {
+      state.voix.lastNativeLevelAt = now;
+      sendVoixNativeEvent("listening", Math.min(1, rms * 12));
     }
 
     const duration = now - state.voix.startedAt;
@@ -3219,6 +3612,7 @@ async function startVoixSession() {
   state.voix.active = true;
   state.voix.muted = false;
   stopTTS();
+  sendVoixNativeEvent("starting", 0.65);
   if (!els.voixDialog.open) els.voixDialog.showModal();
   setVoixUI("starting", "Preparando Avalynx Voix…", "Liberando microfone e voz neural.");
 
@@ -3234,6 +3628,7 @@ function stopVoixSession({ close = true } = {}) {
   state.voix.active = false;
   cancelVoixVAD();
   stopTTS();
+  sendVoixNativeEvent("ended", 0);
 
   try {
     if (state.voix.recorder?.state === "recording") state.voix.recorder.stop();
@@ -3588,6 +3983,11 @@ async function generateAssistant(chat, requestContext = null) {
   state.controller = new AbortController();
   els.sendIcon.textContent = "■";
   els.send.title = "Parar";
+  if (state.voix.active) {
+    sendVoixNativeEvent("thinking", 0.72);
+  } else {
+    sendThinkingNativeEvent(true);
+  }
   const assistantMsg = { id: uid(), role:"assistant", content:"", createdAt:Date.now() };
   chat.messages.push(assistantMsg);
   persist();
@@ -3802,6 +4202,11 @@ Os anexos continuam no composer para você poder tentar novamente.`;
   } finally {
     state.generating = false;
     state.controller = null;
+    if (state.voix.active) {
+      sendVoixNativeEvent(state.voix.phase || "active", 0.6);
+    } else {
+      sendThinkingNativeEvent(false);
+    }
     els.sendIcon.textContent = "↑";
     els.send.title = "Enviar";
     contentNode.classList.remove("typing-cursor");
@@ -4339,6 +4744,16 @@ document.addEventListener("avai:history-storage-trimmed", () => {
 async function bootstrapAva() {
   setupIOSPWA();
   loadState();
+
+  const routed = activateChatFromURL();
+
+  if (!routed && state.activeId) {
+    const current = activeChat();
+    if (current && location.pathname === "/") {
+      syncChatURL(current, { replace: true });
+    }
+  }
+
   renderAll();
   renderAgentList();
   syncActiveAgentUI();
@@ -4347,6 +4762,26 @@ async function bootstrapAva() {
   await loadServerConfig();
   syncSettingsForm();
 }
+
+window.addEventListener("popstate", () => {
+  const match = location.pathname.match(/^\/c\/([^/?#]+)\/?$/i);
+
+  if (match) {
+    const chat = chatBySlug(match[1]);
+    if (chat) {
+      state.activeId = chat.id;
+      persist();
+      renderAll();
+      return;
+    }
+  }
+
+  if (location.pathname === "/") {
+    state.activeId = state.chats[0]?.id || null;
+    persist();
+    renderAll();
+  }
+});
 
 bootstrapAva().catch(error => {
   console.error("Ava I bootstrap failed:", error);
