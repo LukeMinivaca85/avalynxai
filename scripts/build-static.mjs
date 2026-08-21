@@ -13,7 +13,8 @@ const staticFiles = [
   "app.js",
   "styles.css",
   "sw.js",
-  "manifest.webmanifest"
+  "manifest.webmanifest",
+  "favicon.ico"
 ];
 
 for (const file of staticFiles) {

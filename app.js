@@ -4805,7 +4805,7 @@ document.querySelector("#chatModeBtn")?.addEventListener("click",()=>setAvaMode(
 document.querySelector("#codeModeBtn")?.addEventListener("click",()=>setAvaMode("code"));
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.warn));
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(console.warn));
 }
 
 document.addEventListener("avai:history-storage-trimmed", () => {

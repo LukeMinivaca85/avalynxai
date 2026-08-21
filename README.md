@@ -552,3 +552,19 @@ No `AVA_CODE_BASE_URL`, `AVA_CODE_MODEL`, or `AVA_CODE_API_KEY` environment vari
 The visible product remains **Ava Code**; OpenRouter/Qwen are inference infrastructure and are identified in technical/runtime information.
 
 Because free OpenRouter routes can change availability, the client automatically falls back to `openrouter/free` when the Qwen Coder free route fails.
+
+
+## v6.1.2 — Refresh + favicon fix
+
+Cause:
+When a chat was opened at `/c/<slug>`, relative asset paths such as `styles.css`,
+`app.js`, `manifest.webmanifest`, and `icons/icon-192.png` were resolved by the
+browser as `/c/styles.css`, `/c/app.js`, etc. The SPA fallback then returned
+`index.html` for those asset requests, producing an unstyled/raw page after refresh.
+
+Fix:
+- all public assets use root-absolute paths (`/styles.css`, `/app.js`, `/icons/...`)
+- service worker registers as `/sw.js` with scope `/`
+- service-worker cache uses root-absolute keys
+- added `/favicon.ico` plus explicit PNG favicon metadata
+- favicon is copied into `dist/`

@@ -1,15 +1,16 @@
-const CACHE = "ava-i-shell-v6.1.1-openrouter-code";
+const CACHE = "ava-i-shell-v6.1.2-root-assets";
 const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./icons/icon-152.png",
-  "./icons/icon-167.png",
-  "./icons/icon-180.png",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "/",
+  "/index.html",
+  "/styles.css",
+  "/app.js",
+  "/manifest.webmanifest",
+  "/favicon.ico",
+  "/icons/icon-152.png",
+  "/icons/icon-167.png",
+  "/icons/icon-180.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png"
 ];
 
 self.addEventListener("install", event => {
@@ -33,10 +34,10 @@ self.addEventListener("fetch", event => {
       fetch(event.request)
         .then(response => {
           const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put("./index.html", copy));
+          caches.open(CACHE).then(cache => cache.put("/index.html", copy));
           return response;
         })
-        .catch(() => caches.match("./index.html"))
+        .catch(() => caches.match("/index.html"))
     );
     return;
   }
