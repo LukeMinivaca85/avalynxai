@@ -497,3 +497,29 @@ Ava Code uses a server workspace under `server/workspaces`, an executable allowl
 Browser Live uses Playwright Chromium plus `page.screencast`/SSE. In production, use a long-running Render-style service; install Chromium with `npm run browser:install`.
 Ava Create is provider-neutral. Configure `AVA_IMAGE_ENDPOINT`/`AVA_IMAGE_API_KEY`, `AVA_MUSIC_ENDPOINT`/`AVA_MUSIC_API_KEY`, and `AVA_VIDEO_ENDPOINT`/`AVA_VIDEO_API_KEY`.
 Shortcuts: Option/Alt+C Ava Code, Option/Alt+B Browser Live, Option/Alt+G Ava Create.
+
+
+## v6.0.1 — Buttons / ES Module fix
+
+Root cause of the dead v6.0 buttons:
+`app.js` imports `modules/*.js`, so it is an ES module. The HTML was still loading it as a classic script. Browsers therefore stopped execution at the first `import`, which disabled the whole UI.
+
+Fixed:
+- `<script type="module" src="app.js"></script>`
+- static `modules/` directory is copied into `dist/`
+- all v6 frontend/server modules are now included in `npm run check`
+- cache bumped so browsers do not retain the broken v6.0 `app.js`
+
+### Render
+
+Recommended Build Command:
+
+`npm run render:build`
+
+Equivalent full command:
+
+`npm install && npx playwright install --with-deps chromium && npm run check && npm run build`
+
+Start Command:
+
+`node server.mjs`

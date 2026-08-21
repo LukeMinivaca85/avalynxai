@@ -4705,3 +4705,15 @@ function renderPinnedAgentsMenuV6(){const m=document.querySelector("#agentPinsMe
 document.querySelector("#agentPinsToggle")?.addEventListener("click",()=>{const m=document.querySelector("#agentPinsMenu");renderPinnedAgentsMenuV6();m.hidden=!m.hidden});
 document.addEventListener("keydown",e=>{if(!e.altKey)return;const k=e.key.toLowerCase();if(k==="c"){e.preventDefault();openAvaToolV6("code")}if(k==="b"){e.preventDefault();openAvaToolV6("browser")}if(k==="g"){e.preventDefault();openAvaToolV6("create")}});
 queueMicrotask(()=>{ensureAvaCodeAgentV6();renderPinnedAgentsMenuV6()});
+
+
+// v6.0.1 — visible module boot diagnostics.
+window.addEventListener("error", event => {
+  const message = String(event?.error?.message || event?.message || "");
+  if (!message) return;
+  console.error("Ava I frontend error:", event.error || event);
+});
+
+window.addEventListener("unhandledrejection", event => {
+  console.error("Ava I unhandled promise rejection:", event.reason);
+});
