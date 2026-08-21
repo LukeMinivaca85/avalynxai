@@ -1,60 +1,8 @@
+import { createAvaCodeClient, mountAvaCodePanel } from "./modules/ava-code.js";
+import { createBrowserLiveClient, mountBrowserLive } from "./modules/browser-live.js";
+import { createAvaCreateClient, mountAvaCreate } from "./modules/ava-create.js";
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-
-function sendAvalynxNativeEvent(payload) {
-  const event = {
-    source: "avalynx-web",
-    timestamp: Date.now(),
-    ...payload
-  };
-
-  try {
-    if (window.webkit?.messageHandlers?.avalynx) {
-      window.webkit.messageHandlers.avalynx.postMessage(event);
-      return true;
-    }
-  } catch (error) {
-    console.warn("Avalynx native bridge iOS:", error);
-  }
-
-  try {
-    if (window.AvalynxNative?.postMessage) {
-      window.AvalynxNative.postMessage(JSON.stringify(event));
-      return true;
-    }
-  } catch (error) {
-    console.warn("Avalynx native bridge Android:", error);
-  }
-
-  return false;
-}
-
-function sendThinkingNativeEvent(active, title = "Ava esta pensando") {
-  sendAvalynxNativeEvent({
-    type: "thinking",
-    active,
-    title
-  });
-}
-
-function sendTTSNativeEvent(stateName, audio = null, title = "Ava lendo") {
-  sendAvalynxNativeEvent({
-    type: "tts",
-    state: stateName,
-    title,
-    elapsed: Number.isFinite(audio?.currentTime) ? audio.currentTime : 0,
-    duration: Number.isFinite(audio?.duration) ? audio.duration : 0
-  });
-}
-
-function sendVoixNativeEvent(phase, level = 0.5, title = "Avalynx Voix") {
-  sendAvalynxNativeEvent({
-    type: "voix",
-    state: phase,
-    title,
-    level: Math.max(0, Math.min(1, Number(level) || 0))
-  });
-}
 
 const DEFAULT_PROMPT_VERSION = 5;
 const DEFAULT_SYSTEM_PROMPT = `You are Ava I, an advanced general-purpose artificial intelligence assistant created by Lukintosh Corporation.
@@ -415,7 +363,6 @@ const state = {
   ttsMessageId: null,
   ttsAbortController: null,
   ttsObjectURL: null,
-  ttsNativeTimer: 0,
   voix: {
     active: false,
     phase: "idle",
@@ -427,7 +374,6 @@ const state = {
     analyser: null,
     source: null,
     vadFrame: 0,
-    lastNativeLevelAt: 0,
     startedAt: 0,
     lastSoundAt: 0,
     hasSpeech: false
@@ -1936,11 +1882,6 @@ function appendMessageElement(msg, streaming = false) {
     if (!action) return;
     if (action === "copy") {
       await navigator.clipboard?.writeText(msg.content || "");
-      sendAvalynxNativeEvent({
-        type: "copied",
-        text: "Mensagem copiada",
-        value: msg.content || ""
-      });
       const btn = actionButton;
       if (btn) {
         btn.classList.add("action-done");
@@ -2731,11 +2672,6 @@ function stopTTS() {
   try { state.ttsAbortController?.abort(); } catch {}
   state.ttsAbortController = null;
 
-  if (state.ttsNativeTimer) {
-    clearInterval(state.ttsNativeTimer);
-    state.ttsNativeTimer = 0;
-  }
-
   if (state.ttsAudio) {
     try {
       state.ttsAudio.pause();
@@ -2752,24 +2688,6 @@ function stopTTS() {
   state.ttsAudio = null;
   state.ttsMessageId = null;
   clearTTSButtons();
-  sendTTSNativeEvent("stopped", null, "Ava pausada");
-}
-
-function bindNativeTTSProgress(audio, title = "Ava lendo") {
-  if (!audio) return;
-  if (state.ttsNativeTimer) clearInterval(state.ttsNativeTimer);
-
-  const update = () => sendTTSNativeEvent("playing", audio, title);
-  update();
-  audio.addEventListener("loadedmetadata", update, { once: true });
-  audio.addEventListener("timeupdate", update);
-  audio.addEventListener("play", update);
-  audio.addEventListener("ended", () => sendTTSNativeEvent("ended", audio, "Ava concluiu"), { once: true });
-  audio.addEventListener("pause", () => {
-    if (!audio.ended) sendTTSNativeEvent("paused", audio, "Ava pausada");
-  });
-
-  state.ttsNativeTimer = setInterval(update, 1000);
 }
 
 function waitSourceBuffer(sourceBuffer) {
@@ -2888,7 +2806,6 @@ async function speakEleven(text, { messageId = null } = {}) {
     ? document.querySelector(`.message[data-id="${CSS.escape(messageId)}"] [data-action="read"]`)
     : null;
   actionButton?.classList.add("tts-loading");
-  sendTTSNativeEvent("loading", null, "Preparando voz da Ava");
 
   const isLikelyWebKitTouch = /iP(hone|ad|od)/i.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -2914,7 +2831,6 @@ async function speakEleven(text, { messageId = null } = {}) {
 
     state.ttsAudio = audio;
     state.ttsObjectURL = objectURL;
-    bindNativeTTSProgress(audio);
 
     immediatePlayPromise = audio.play().catch(err => {
       console.warn("Early TTS play waiting/blocked:", err);
@@ -2965,7 +2881,6 @@ async function speakEleven(text, { messageId = null } = {}) {
 
       state.ttsAudio = audio;
       state.ttsObjectURL = objectURL;
-      bindNativeTTSProgress(audio);
 
       actionButton?.classList.remove("tts-loading");
       actionButton?.classList.add("speaking");
@@ -3419,7 +3334,6 @@ function setVoixUI(phase, status, hint = "") {
   if (els.voixDialog) els.voixDialog.dataset.phase = phase;
   if (els.voixStatus) els.voixStatus.textContent = status;
   if (els.voixHint) els.voixHint.textContent = hint;
-  sendVoixNativeEvent(phase, phase === "listening" ? 0.35 : phase === "speaking" ? 0.85 : 0.55);
 }
 
 function preferredRecordingMime() {
@@ -3477,11 +3391,6 @@ function startVoixVAD() {
       state.voix.hasSpeech = true;
       state.voix.lastSoundAt = now;
       if (els.voixTranscript && !els.voixTranscript.textContent) els.voixTranscript.textContent = "Ouvindo você…";
-    }
-
-    if (now - state.voix.lastNativeLevelAt > 180) {
-      state.voix.lastNativeLevelAt = now;
-      sendVoixNativeEvent("listening", Math.min(1, rms * 12));
     }
 
     const duration = now - state.voix.startedAt;
@@ -3612,7 +3521,6 @@ async function startVoixSession() {
   state.voix.active = true;
   state.voix.muted = false;
   stopTTS();
-  sendVoixNativeEvent("starting", 0.65);
   if (!els.voixDialog.open) els.voixDialog.showModal();
   setVoixUI("starting", "Preparando Avalynx Voix…", "Liberando microfone e voz neural.");
 
@@ -3628,7 +3536,6 @@ function stopVoixSession({ close = true } = {}) {
   state.voix.active = false;
   cancelVoixVAD();
   stopTTS();
-  sendVoixNativeEvent("ended", 0);
 
   try {
     if (state.voix.recorder?.state === "recording") state.voix.recorder.stop();
@@ -3983,11 +3890,6 @@ async function generateAssistant(chat, requestContext = null) {
   state.controller = new AbortController();
   els.sendIcon.textContent = "■";
   els.send.title = "Parar";
-  if (state.voix.active) {
-    sendVoixNativeEvent("thinking", 0.72);
-  } else {
-    sendThinkingNativeEvent(true);
-  }
   const assistantMsg = { id: uid(), role:"assistant", content:"", createdAt:Date.now() };
   chat.messages.push(assistantMsg);
   persist();
@@ -4202,11 +4104,6 @@ Os anexos continuam no composer para você poder tentar novamente.`;
   } finally {
     state.generating = false;
     state.controller = null;
-    if (state.voix.active) {
-      sendVoixNativeEvent(state.voix.phase || "active", 0.6);
-    } else {
-      sendThinkingNativeEvent(false);
-    }
     els.sendIcon.textContent = "↑";
     els.send.title = "Enviar";
     contentNode.classList.remove("typing-cursor");
@@ -4798,3 +4695,13 @@ if (els.allowPaidTools) {
     persist();
   });
 }
+
+const avaCodeClientV6=createAvaCodeClient(),browserLiveClientV6=createBrowserLiveClient(),avaCreateClientV6=createAvaCreateClient();
+function openAvaToolV6(kind){const dock=document.querySelector("#avaToolsDock"),surface=document.querySelector("#avaToolSurface");if(!dock||!surface)return;dock.hidden=false;if(kind==="code")mountAvaCodePanel(surface,avaCodeClientV6);if(kind==="browser")mountBrowserLive(surface,browserLiveClientV6);if(kind==="create")mountAvaCreate(surface,avaCreateClientV6)}
+document.querySelectorAll("[data-ava-tool]").forEach(b=>b.addEventListener("click",()=>openAvaToolV6(b.dataset.avaTool)));
+document.querySelector("#avaToolsClose")?.addEventListener("click",()=>document.querySelector("#avaToolsDock").hidden=true);
+function ensureAvaCodeAgentV6(){if(Array.isArray(state.agents)&&!state.agents.some(a=>a.builtin==="ava-code")){state.agents.unshift({id:"builtin-ava-code",name:"Ava Code",description:"Agente de programação com workspace seguro.",instructions:"Planeje antes de editar. Preserve arquivos. Peça aprovação antes de executar comandos.",builtin:"ava-code",pinned:true,createdAt:Date.now()});persist()}}
+function renderPinnedAgentsMenuV6(){const m=document.querySelector("#agentPinsMenu");if(!m||!Array.isArray(state.agents))return;m.innerHTML="";const p=state.agents.filter(a=>a.pinned);if(!p.length)m.innerHTML='<div class="agent-pin-empty">Nenhum agente fixado</div>';p.forEach(a=>{const b=document.createElement("button");b.className="agent-pin-row";b.textContent=a.name||"Agente";b.onclick=()=>{state.activeAgentId=a.id;persist();m.hidden=true;if(a.builtin==="ava-code")openAvaToolV6("code")};m.append(b)})}
+document.querySelector("#agentPinsToggle")?.addEventListener("click",()=>{const m=document.querySelector("#agentPinsMenu");renderPinnedAgentsMenuV6();m.hidden=!m.hidden});
+document.addEventListener("keydown",e=>{if(!e.altKey)return;const k=e.key.toLowerCase();if(k==="c"){e.preventDefault();openAvaToolV6("code")}if(k==="b"){e.preventDefault();openAvaToolV6("browser")}if(k==="g"){e.preventDefault();openAvaToolV6("create")}});
+queueMicrotask(()=>{ensureAvaCodeAgentV6();renderPinnedAgentsMenuV6()});

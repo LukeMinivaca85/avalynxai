@@ -55,7 +55,7 @@
         <button id="studioBtn" class="sidebar-action studio-sidebar-action">
           <span class="studio-sidebar-icon">◇</span>
           <span>Avalynx Studio</span>
-        </button>
+        </button><button id="agentPinsToggle" class="agent-pins-toggle" type="button" aria-label="Agentes fixados">↓</button><div id="agentPinsMenu" class="agent-pins-menu" hidden></div>
         <button id="installBtn" class="sidebar-action hidden">Adicionar ao iPhone</button>
         <button id="settingsBtn" class="sidebar-action">Configurações</button>
       </div>
@@ -555,5 +555,5 @@
   </template>
 
   <script defer src="app.js"></script>
-</body>
+<div id="avaToolsDock" class="ava-tools-dock" hidden><div class="ava-tools-tabs"><button data-ava-tool="code">⌘ Ava Code</button><button data-ava-tool="browser">◎ Browser Live</button><button data-ava-tool="create">✦ Create</button><button id="avaToolsClose">×</button></div><div id="avaToolSurface" class="ava-tool-surface"></div></div></body>
 </html>

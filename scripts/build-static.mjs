@@ -26,4 +26,5 @@ if (existsSync(resolve(root, "icons"))) {
   await cp(resolve(root, "icons"), resolve(dist, "icons"), { recursive: true });
 }
 
+if (existsSync(resolve(root, "modules"))) { await cp(resolve(root, "modules"), resolve(dist, "modules"), { recursive: true }); }
 console.log("Ava I static frontend built into dist/");

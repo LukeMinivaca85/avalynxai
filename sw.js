@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v5.5-widgets-syntax";
+const CACHE = "ava-i-shell-v6.0";
 const ASSETS = [
   "./",
   "./index.html",

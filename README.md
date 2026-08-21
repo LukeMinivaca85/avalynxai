@@ -490,3 +490,10 @@ Behavior:
   - white: punctuation and normal identifiers
 - No external syntax-highlighting CDN is required.
 - Regression checks preserve KaTeX, ElevenLabs server mode, Studio, chat slugs, attachments and deployment files.
+
+
+## v6.0 — Ava Code, Browser Live, Ava Create, pinned agents
+Ava Code uses a server workspace under `server/workspaces`, an executable allowlist, command timeout, and per-command approval.
+Browser Live uses Playwright Chromium plus `page.screencast`/SSE. In production, use a long-running Render-style service; install Chromium with `npm run browser:install`.
+Ava Create is provider-neutral. Configure `AVA_IMAGE_ENDPOINT`/`AVA_IMAGE_API_KEY`, `AVA_MUSIC_ENDPOINT`/`AVA_MUSIC_API_KEY`, and `AVA_VIDEO_ENDPOINT`/`AVA_VIDEO_API_KEY`.
+Shortcuts: Option/Alt+C Ava Code, Option/Alt+B Browser Live, Option/Alt+G Ava Create.
