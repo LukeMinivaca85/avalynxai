@@ -326,6 +326,7 @@ const DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
 const DEFAULT_MODEL_LABEL = "NVIDIA Nemotron 3 Ultra";
 const FREE_FALLBACK_MODELS = ["nvidia/nemotron-3-ultra-550b-a55b"];
 
+
 const state = {
   chats: [],
   activeId: null,
@@ -2038,6 +2039,7 @@ function wireCodeCopy(scope) {
 }
 
 function renderMarkdown(text) {
+  text = String(text || "").replace(/(?:\bsvg\b\s*){2,}/gi, "");
   let source = String(text || "");
   const blocks = [];
   const mathBlocks = [];
@@ -2332,7 +2334,7 @@ async function autoRenameChat(chat) {
       },
       body: JSON.stringify({
         // Always use the free router. Auto-rename must never choose a paid model.
-        model: NVIDIA_CHAT_FALLBACK,
+        model: "nvidia/nemotron-3-ultra-550b-a55b",
         messages: [{
           role: "user",
           content: `Crie um título curto e específico para esta conversa.
@@ -3752,7 +3754,7 @@ function multimodalRequirements(content) {
 }
 
 function modelSupportsInput(modelId, modality) {
-  if (modelId === NVIDIA_CHAT_MODEL && modality === "image") return true;
+  if (modelId === "nvidia/nemotron-3-ultra-550b-a55b" && modality === "image") return true;
   const model = state.modelCatalog.find(item => item.id === modelId);
   return !!model?.architecture?.input_modalities?.includes(modality);
 }
@@ -3761,7 +3763,7 @@ function candidateModelsForRequest(currentApiContent, preferredModel = state.mod
   const requirements = multimodalRequirements(currentApiContent);
   const needsImage = requirements.has("image");
 
-  if (!needsImage || preferredModel === NVIDIA_CHAT_MODEL || modelSupportsInput(preferredModel, "image")) {
+  if (!needsImage || preferredModel === "nvidia/nemotron-3-ultra-550b-a55b" || modelSupportsInput(preferredModel, "image")) {
     return [
       preferredModel,
       ...FREE_FALLBACK_MODELS.filter(m => m !== preferredModel)
@@ -3769,9 +3771,9 @@ function candidateModelsForRequest(currentApiContent, preferredModel = state.mod
   }
 
   return [
-    NVIDIA_CHAT_MODEL,
+    "nvidia/nemotron-3-ultra-550b-a55b",
     preferredModel,
-    ...FREE_FALLBACK_MODELS.filter(m => m !== preferredModel && m !== NVIDIA_CHAT_MODEL)
+    ...FREE_FALLBACK_MODELS.filter(m => m !== preferredModel && m !== "nvidia/nemotron-3-ultra-550b-a55b")
   ];
 }
 
@@ -3906,7 +3908,7 @@ function webRequestNeedsFreshness(text) {
 
 const MCP_BRANDS={
  github:["GitHub","https://github.githubassets.com/favicons/favicon.svg"],supabase:["Supabase","https://supabase.com/favicon/favicon-32x32.png"],cloudflare:["Cloudflare","https://www.cloudflare.com/favicon.ico"],"google-drive":["Google Drive","https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png"],vercel:["Vercel","https://vercel.com/favicon.ico"],render:["Render","https://render.com/favicon.ico"],stripe:["Stripe","https://stripe.com/favicon.ico"],sentry:["Sentry","https://sentry.io/favicon.ico"]};
-function brandIcon(id,fallback="MCP"){const b=MCP_BRANDS[id];return b?`<img class="mcp-brand-logo" src="${b[1]}" alt="" referrerpolicy="no-referrer">`:`<span>${escapeHtml(fallback)}</span>`}
+function brandIcon(id,fallback="MCP"){const b=MCP_BRANDS[id];return b?`<img class="mcp-brand-logo" src="${b[1]}" alt="" referrerpolicy="no-referrer">`:`<span aria-hidden="true">${escapeHtml(fallback)}</span>`}
 const MCP_MENTIONS=Object.entries(MCP_BRANDS).map(([id,v])=>({id,label:v[0]}));
 function mentionedMcpProviders(text){return MCP_MENTIONS.filter(p=>new RegExp(`@${p.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\s|$)`,"i").test(text)).map(p=>p.id)}
 function mentionMenu(){let x=document.querySelector("#mcpMentionMenu");if(!x){x=document.createElement("div");x.id="mcpMentionMenu";x.className="mcp-mention-menu hidden";document.querySelector(".composer")?.appendChild(x)}return x}
@@ -4306,7 +4308,7 @@ ENGINEERING
 - The product identity is Ava Code. The primary inference model is NVIDIA Nemotron 3 Ultra through NVIDIA NIM.`
     });
 
-    const candidates=[NVIDIA_CODE_MODEL];
+    const candidates=["nvidia/nemotron-3-ultra-550b-a55b"];
     let selectedModel=null;
     let finalContent="";
     let lastError=null;
@@ -4471,7 +4473,7 @@ ENGINEERING
     thinking.querySelector("span:last-child").textContent="Ava Code concluiu";
 
     assistantMsg.content=finalContent;
-    assistantMsg.model=selectedModel || NVIDIA_CODE_MODEL;
+    assistantMsg.model=selectedModel || "nvidia/nemotron-3-ultra-550b-a55b";
 
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
@@ -4519,10 +4521,10 @@ async function generateAssistant(chat, requestContext = null) {
 
   try {
     const activeAgent = activeAgentForChat(chat);
-    const requestModel = activeAgent?.model || NVIDIA_CHAT_MODEL;
+    const requestModel = activeAgent?.model || "nvidia/nemotron-3-ultra-550b-a55b";
     if(!nvidiaReady()) throw Object.assign(new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY."),{status:503});
 
-    const candidateModels=[NVIDIA_CHAT_MODEL];
+    const candidateModels=["nvidia/nemotron-3-ultra-550b-a55b"];
 
     let res = null;
     let selectedModel = requestModel;
