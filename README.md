@@ -568,3 +568,65 @@ Fix:
 - service-worker cache uses root-absolute keys
 - added `/favicon.ico` plus explicit PNG favicon metadata
 - favicon is copied into `dist/`
+
+
+## v6.1.3 — Ava Code auto-rename runtime fix
+
+Fixed a runtime error in Ava Code:
+`maybeAutoRenameChat is not defined`
+
+Ava Code now calls the existing `autoRenameChat(chat)` implementation.
+A small compatibility alias is also included to prevent the same class of failure
+if another code path still references `maybeAutoRenameChat`.
+
+
+## v6.2 — Ava Code MCP Registry
+
+### Code-specific starters
+The four empty-state starter buttons now change with `Chat | Ava Code`. Clicking a Code starter always fills the Ava Code prompt, rather than reusing the Chat suggestion.
+
+### MCP Registry
+Ava Code can discover and call tools from Streamable HTTP MCP servers.
+
+Built-in registry slots:
+- GitHub
+- Supabase
+- Cloudflare
+- Google Drive
+- Vercel
+- Render
+- Stripe
+- Sentry
+
+Extra servers can be registered with `MCP_SERVERS_JSON`.
+
+The browser never receives MCP tokens. Connections and tool calls happen server-side.
+
+### Agent loop
+Ava Code sends discovered MCP tools to OpenRouter in OpenAI tool format. Qwen3 Coder is preferred; `openrouter/free` remains the fallback. Tool results are fed back to the model for up to six model/tool rounds.
+
+Tools whose names/descriptions look like writes, deploys, database mutations, uploads, commits, merges, DNS changes, secrets, deletes, etc. require a one-time user confirmation before the server calls them.
+
+Read-only tools can execute without an extra confirmation.
+
+### Environment
+See `.env.example`. For example:
+
+`MCP_GITHUB_URL=https://your-github-mcp.example/mcp`
+
+`MCP_GITHUB_TOKEN=...`
+
+URLs must be real Streamable HTTP MCP endpoints. A connector card remains `Não configurado` until its URL is present on the server.
+
+
+## v6.2.1 — Lukintosh unified MCP Gateway
+
+Default MCP endpoint:
+`https://mcp.lukintosh.com/mcp`
+
+Normal production setup only requires:
+`AVA_MCP_GATEWAY_TOKEN=<gateway bearer token>`
+
+The MCP panel inspects gateway tools and groups them into provider cards such as GitHub, Supabase, Cloudflare, Google Drive, Vercel, Render, Stripe and Sentry.
+
+Direct MCP URLs from v6.2 remain supported as optional additional servers.

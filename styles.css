@@ -2437,3 +2437,97 @@ body.ios .filter-pills::-webkit-scrollbar {
 /* Ava I v6.1 — integrated Chat | Ava Code */
 .ava-mode-switch{display:flex;align-items:center;padding:3px;background:var(--soft);border:1px solid var(--border);border-radius:12px;gap:2px}.ava-mode-tab{border:0;background:transparent;color:var(--muted);padding:7px 12px;border-radius:9px;font-weight:700;cursor:pointer}.ava-mode-tab.active{background:var(--panel-solid);color:var(--text);box-shadow:0 1px 4px #0001}.ava-code-mode #modelButton{pointer-events:none}.ava-code-mode #modelButton .chev{display:none}.ava-code-mode #activeAgentButton{display:none}.ava-code-mode .starter-grid .starter:nth-child(1){font-size:0}.ava-code-mode .starter-grid .starter:nth-child(1)::after{content:"Crie um app React completo";font-size:13px}.ava-code-mode .starter-grid .starter:nth-child(2){font-size:0}.ava-code-mode .starter-grid .starter:nth-child(2)::after{content:"Encontre e corrija este bug";font-size:13px}.ava-code-mode .starter-grid .starter:nth-child(3){font-size:0}.ava-code-mode .starter-grid .starter:nth-child(3)::after{content:"Analise a arquitetura deste projeto";font-size:13px}.ava-code-mode .starter-grid .starter:nth-child(4){font-size:0}.ava-code-mode .starter-grid .starter:nth-child(4)::after{content:"Refatore este código";font-size:13px}.ava-code-activity{display:grid;gap:6px;margin:0 0 12px}.ava-code-step{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.ava-code-step-dot{width:7px;height:7px;border-radius:50%;background:#b98cff}.ava-code-step.running .ava-code-step-dot{animation:avaCodePulse 1s infinite}.ava-code-step.done .ava-code-step-dot{background:#75e59b}.ava-code-step.error .ava-code-step-dot{background:#ff67c7}@keyframes avaCodePulse{50%{opacity:.25;transform:scale(.75)}}
 @media(max-width:700px){.ava-mode-tab{padding:7px 8px;font-size:12px}.ava-code-mode #modelButton{display:none}}
+
+
+/* Ava I v6.2 — Ava Code MCP Registry */
+body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
+
+.mcp-dialog {
+  width:min(820px, calc(100vw - 32px));
+  max-width:none;
+  max-height:min(720px, calc(100dvh - 40px));
+  padding:0;
+  border:0;
+  border-radius:22px;
+  background:transparent;
+}
+.mcp-dialog::backdrop {
+  background:rgba(0,0,0,.42);
+  backdrop-filter:blur(8px);
+}
+.mcp-shell {
+  overflow:hidden;
+  border:1px solid var(--border);
+  border-radius:22px;
+  background:var(--panel-solid);
+  box-shadow:0 26px 90px rgba(0,0,0,.25);
+}
+.mcp-head {
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  padding:18px 20px 14px;
+  border-bottom:1px solid var(--border);
+}
+.mcp-head h2 { margin:0; font-size:19px; }
+.mcp-head p { margin:4px 0 0; color:var(--muted); font-size:10px; }
+.mcp-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 20px;
+  border-bottom:1px solid var(--border);
+  color:var(--muted);
+  font-size:10px;
+}
+.mcp-server-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;
+  padding:16px 20px;
+}
+.mcp-server-card {
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:11px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  opacity:.62;
+  background:var(--soft);
+}
+.mcp-server-card.configured { opacity:1; background:var(--panel-solid); }
+.mcp-server-icon {
+  width:38px;height:38px;
+  display:grid;place-items:center;
+  border-radius:11px;
+  border:1px solid var(--border);
+  background:var(--soft);
+  font-size:10px;font-weight:900;
+}
+.mcp-server-copy { min-width:0; }
+.mcp-server-copy strong,.mcp-server-copy span,.mcp-server-copy small { display:block; }
+.mcp-server-copy strong { font-size:11px; }
+.mcp-server-copy span { margin-top:2px;color:var(--muted);font-size:9px; }
+.mcp-server-copy small { margin-top:3px;color:var(--muted);font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.mcp-status-dot { width:8px;height:8px;border-radius:50%;background:var(--border); }
+.mcp-status-dot.on { background:#75e59b; box-shadow:0 0 0 4px rgba(117,229,155,.12); }
+.mcp-env-help {
+  margin:0 20px 18px;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  color:var(--muted);
+  font-size:9px;
+}
+.mcp-env-help summary { color:var(--text);cursor:pointer;font-weight:800; }
+.mcp-env-help code { display:block;margin-top:8px;overflow:auto;color:var(--text); }
+
+@media(max-width:650px){
+  .mcp-server-grid { grid-template-columns:1fr; padding:12px; }
+  .mcp-toolbar,.mcp-head { padding-inline:14px; }
+}
+
+.mcp-gateway-card{grid-column:1/-1;display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:10px;align-items:center;padding:13px;border:1px solid var(--border);border-radius:15px;background:linear-gradient(135deg,var(--panel-solid),var(--soft));opacity:.68}.mcp-gateway-card.configured{opacity:1;box-shadow:0 7px 24px rgba(0,0,0,.045)}

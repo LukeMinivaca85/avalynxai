@@ -4,6 +4,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/mcp/:path*",
+      "destination": "/api/mcp?path=:path*"
+    },
+    {
       "source": "/api/config",
       "destination": "/api/proxy?path=config"
     },

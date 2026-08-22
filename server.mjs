@@ -3,6 +3,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectBody, proxyRequest, pipeProxyResult, publicConfig } from "./server/proxy-core.mjs";
+import { handleMcp } from "./server/modules/mcp-registry.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const root = existsSync(join(projectRoot, "dist", "index.html"))
@@ -31,6 +32,16 @@ function sendJSON(res, status, data) {
 }
 
 async function handleAPI(req, res, url) {
+
+  if (url.pathname.startsWith("/api/mcp")) {
+    const raw = await collectBody(req);
+    let body = {};
+    try {
+      body = raw?.length ? JSON.parse(Buffer.from(raw).toString("utf8")) : {};
+    } catch {}
+    await handleMcp(req, res, url, body);
+    return;
+  }
 
   if (url.pathname === "/api/config") {
     sendJSON(res, 200, publicConfig());

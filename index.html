@@ -91,10 +91,10 @@
           <h1>O que vamos criar?</h1>
           <p>Ava I combina raciocínio profundo, visão, arquivos e memória local em um único chat.</p>
           <div class="starter-grid">
-            <button class="starter">Crie uma ideia de produto insana</button>
-            <button class="starter">Explique algo difícil de um jeito simples</button>
-            <button class="starter">Analise este projeto como um engenheiro</button>
-            <button class="starter">Planeje meu próximo grande passo</button>
+            <button class="starter" data-chat="Crie uma ideia de produto insana" data-code="Implemente uma feature completa neste projeto">Crie uma ideia de produto insana</button>
+            <button class="starter" data-chat="Explique algo difícil de um jeito simples" data-code="Encontre e corrija um bug neste código">Explique algo difícil de um jeito simples</button>
+            <button class="starter" data-chat="Analise este projeto como um engenheiro" data-code="Analise a arquitetura e proponha melhorias">Analise este projeto como um engenheiro</button>
+            <button class="starter" data-chat="Planeje meu próximo grande passo" data-code="Crie testes para este projeto e explique as falhas">Planeje meu próximo grande passo</button>
           </div>
         </div>
         <div id="messages" class="messages"></div>
@@ -104,6 +104,9 @@
         <div id="activeToolBar" class="active-tool-bar hidden"></div>
         <div id="attachmentPreview" class="attachment-preview hidden"></div>
         <div class="composer-tools" aria-label="Ferramentas da Ava I">
+          <button id="mcpToolBtn" class="tool-chip mcp-tool-chip" type="button" title="MCPs do Ava Code">
+            <span>MCPs</span>
+          </button>
           <button id="webToolBtn" class="tool-chip" type="button" aria-pressed="false" title="Pesquisar na web">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"></path></svg>
             <span>Web</span>
@@ -280,6 +283,30 @@
           </div>
         </form>
       </section>
+    </div>
+  </dialog>
+
+
+  <dialog id="mcpDialog" class="mcp-dialog">
+    <div class="mcp-shell">
+      <header class="mcp-head">
+        <div>
+          <h2>MCPs do Ava Code</h2>
+          <p>Ferramentas conectadas ao runtime de programação.</p>
+        </div>
+        <button id="closeMcpDialog" class="icon-btn" type="button">×</button>
+      </header>
+      <div class="mcp-toolbar">
+        <span id="mcpSummary">Verificando conectores…</span>
+        <button id="refreshMcpBtn" class="secondary-btn" type="button">Atualizar</button>
+      </div>
+      <div id="mcpServerGrid" class="mcp-server-grid"></div>
+      <details class="mcp-env-help">
+        <summary>Como conectar mais MCPs</summary>
+        <p>Configure URLs e tokens somente no servidor. Nenhuma credencial é enviada ao navegador.</p>
+        <code>MCP_GITHUB_URL · MCP_SUPABASE_URL · MCP_CLOUDFLARE_URL · MCP_GOOGLE_DRIVE_URL</code>
+        <p>Para outros servidores, use <code>MCP_SERVERS_JSON</code>.</p>
+      </details>
     </div>
   </dialog>
 

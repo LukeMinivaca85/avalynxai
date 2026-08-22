@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.1.2-root-assets";
+const CACHE = "ava-i-shell-v6.2.1-lukintosh-mcp";
 const ASSETS = [
   "/",
   "/index.html",

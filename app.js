@@ -2274,6 +2274,10 @@ function localAutoTitle(chat) {
   return capitalizeFirstLetter(ranked.join(" "));
 }
 
+async function maybeAutoRenameChat(chat) {
+  return autoRenameChat(chat);
+}
+
 async function autoRenameChat(chat) {
   if (!chat) return;
 
@@ -3891,6 +3895,215 @@ function webRequestNeedsFreshness(text) {
 }
 
 
+
+const MCP_PRESET_ICONS = {
+  github: "GH",
+  supabase: "SB",
+  cloudflare: "CF",
+  "google-drive": "GD",
+  vercel: "▲",
+  render: "R",
+  stripe: "S",
+  sentry: "SE"
+};
+
+async function fetchMcpServers() {
+  const response = await fetch("/api/mcp/servers", { cache: "no-store" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `MCP ${response.status}`);
+  return data.servers || [];
+}
+
+async function fetchMcpTools() {
+  try {
+    const response = await fetch("/api/mcp/tools", { cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { tools: [], errors: [{ error: data.error || `MCP ${response.status}` }] };
+    return data;
+  } catch (error) {
+    return { tools: [], errors: [{ error: String(error.message || error) }] };
+  }
+}
+
+function openAiToolsFromMcp(tools) {
+  return (tools || []).map(tool => ({
+    type: "function",
+    function: {
+      name: tool.functionName,
+      description: `[${tool.serverName}] ${tool.description || tool.name}`,
+      parameters: tool.inputSchema || { type: "object", properties: {} }
+    }
+  }));
+}
+
+async function callMcpToolFromCode(toolCall, node) {
+  const functionName = toolCall?.function?.name || "";
+  let args = {};
+  try { args = JSON.parse(toolCall?.function?.arguments || "{}"); } catch {}
+
+  const activity = codeActivity(node, `MCP · ${functionName.replace(/^mcp__/, "").replace(/__/g, " → ")}…`);
+
+  let response = await fetch("/api/mcp/call", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ functionName, arguments: args, approved: false })
+  });
+
+  let data = await response.json().catch(() => ({}));
+
+  if (response.status === 409 && data.approvalRequired) {
+    activity.querySelector("span:last-child").textContent = `${data.server} · ${data.tool} requer aprovação`;
+
+    const approved = confirm(
+      `Ava Code quer usar:\n\n${data.server} → ${data.tool}\n\n${data.message || "Esta ação pode alterar dados."}\n\nPermitir uma vez?`
+    );
+
+    if (!approved) {
+      activity.classList.remove("running");
+      activity.classList.add("error");
+      activity.querySelector("span:last-child").textContent = `${data.server} · ${data.tool} cancelado`;
+      return {
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify({ cancelled: true, reason: "User denied approval." })
+      };
+    }
+
+    response = await fetch("/api/mcp/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ functionName, arguments: args, approved: true })
+    });
+    data = await response.json().catch(() => ({}));
+  }
+
+  activity.classList.remove("running");
+
+  if (!response.ok) {
+    activity.classList.add("error");
+    activity.querySelector("span:last-child").textContent = `MCP falhou · ${data.error || response.status}`;
+  } else {
+    activity.classList.add("done");
+    activity.querySelector("span:last-child").textContent = `${data.server || "MCP"} · ${data.tool || functionName} concluído`;
+  }
+
+  return {
+    role: "tool",
+    tool_call_id: toolCall.id,
+    content: JSON.stringify(response.ok ? data.result : { error: data.error || `HTTP ${response.status}` }).slice(0, 50000)
+  };
+}
+
+
+function inferMcpProvider(tool) {
+  const raw = String(tool?.name || tool?.functionName || "").toLowerCase();
+  const providers = [
+    ["github", "GitHub", "GH"],
+    ["supabase", "Supabase", "SB"],
+    ["cloudflare", "Cloudflare", "CF"],
+    ["google_drive", "Google Drive", "GD"],
+    ["google-drive", "Google Drive", "GD"],
+    ["drive", "Google Drive", "GD"],
+    ["vercel", "Vercel", "▲"],
+    ["render", "Render", "R"],
+    ["stripe", "Stripe", "S"],
+    ["sentry", "Sentry", "SE"]
+  ];
+  for (const [id, name, icon] of providers) {
+    if (raw.startsWith(`${id}__`) || raw.includes(`__${id}__`) || raw.startsWith(`${id}_`) || raw.includes(`_${id}_`)) {
+      return { id: id.replace("_", "-"), name, icon };
+    }
+  }
+  return null;
+}
+
+function buildMcpProviderSummary(servers, tools) {
+  const providers = new Map();
+  for (const tool of tools || []) {
+    const provider = inferMcpProvider(tool);
+    if (!provider) continue;
+    if (!providers.has(provider.id)) {
+      providers.set(provider.id, { ...provider, configured: true, count: 0, via: tool.serverName || "Lukintosh MCP" });
+    }
+    providers.get(provider.id).count += 1;
+  }
+  for (const server of servers || []) {
+    if (!server.configured || server.id === "lukintosh") continue;
+    if (!providers.has(server.id)) {
+      providers.set(server.id, {
+        id: server.id,
+        name: server.name,
+        icon: MCP_PRESET_ICONS[server.id] || server.name.slice(0,2).toUpperCase(),
+        configured: true,
+        count: 0,
+        via: server.name
+      });
+    }
+  }
+  return [...providers.values()];
+}
+
+async function renderMcpRegistry() {
+  const grid = document.querySelector("#mcpServerGrid");
+  const summary = document.querySelector("#mcpSummary");
+  if (!grid || !summary) return;
+
+  grid.innerHTML = "";
+  summary.textContent = "Conectando a mcp.lukintosh.com…";
+
+  try {
+    const [servers, toolData] = await Promise.all([fetchMcpServers(), fetchMcpTools()]);
+    const tools = toolData.tools || [];
+    const lukintosh = servers.find(server => server.id === "lukintosh");
+    const providers = buildMcpProviderSummary(servers, tools);
+
+    const gateway = document.createElement("div");
+    gateway.className = `mcp-gateway-card${lukintosh?.configured ? " configured" : ""}`;
+    gateway.innerHTML = `
+      <div class="mcp-server-icon">LK</div>
+      <div class="mcp-server-copy">
+        <strong>Lukintosh MCP Gateway</strong>
+        <span>${lukintosh?.configured ? "mcp.lukintosh.com · conectado" : "Token do gateway não configurado na Ava"}</span>
+        <small>https://mcp.lukintosh.com/mcp</small>
+      </div>
+      <span class="mcp-status-dot ${lukintosh?.configured ? "on" : ""}"></span>`;
+    grid.appendChild(gateway);
+
+    for (const provider of providers) {
+      const card = document.createElement("div");
+      card.className = "mcp-server-card configured";
+      card.innerHTML = `
+        <div class="mcp-server-icon">${escapeHtml(provider.icon)}</div>
+        <div class="mcp-server-copy">
+          <strong>${escapeHtml(provider.name)}</strong>
+          <span>${provider.count} ferramenta${provider.count===1?"":"s"} disponível${provider.count===1?"":"is"}</span>
+          <small>via ${escapeHtml(provider.via)}</small>
+        </div>
+        <span class="mcp-status-dot on"></span>`;
+      grid.appendChild(card);
+    }
+
+    if (!lukintosh?.configured) {
+      summary.textContent = "Configure AVA_MCP_GATEWAY_TOKEN no backend da Ava.";
+    } else if (!tools.length) {
+      summary.textContent = "Gateway conectado · nenhuma ferramenta foi anunciada ainda";
+    } else {
+      summary.textContent = `Lukintosh MCP conectado · ${providers.length} integrações · ${tools.length} ferramentas`;
+    }
+
+    if (toolData.errors?.length) {
+      const first = toolData.errors[0];
+      console.warn("MCP discovery warnings:", toolData.errors);
+      if (!tools.length && lukintosh?.configured) {
+        summary.textContent = `Gateway configurado, mas tools/list falhou: ${first.error}`;
+      }
+    }
+  } catch (error) {
+    summary.textContent = `Falha no MCP: ${String(error.message || error)}`;
+  }
+}
+
+
 const AVA_CODE_MODEL_LABEL = "Qwen3 Coder · OpenRouter";
 function syncAvaModeUI(){
   const code=state.appMode==="code";
@@ -3911,6 +4124,13 @@ function syncAvaModeUI(){
     if(h)h.textContent="O que vamos criar?";
     if(p)p.textContent="Ava I combina raciocínio profundo, visão, arquivos e memória local em um único chat.";
   }
+
+  $$(".starter").forEach(btn => {
+    const next = code ? btn.dataset.code : btn.dataset.chat;
+    if (next) btn.textContent = next;
+  });
+
+  document.querySelector("#mcpToolBtn")?.classList.toggle("hidden", !code);
 }
 function setAvaMode(mode){
   state.appMode=mode==="code"?"code":"chat";
@@ -3943,7 +4163,7 @@ async function generateAvaCode(chat,requestContext=null){
 
   const node=appendMessageElement(assistantMsg,true);
   const contentNode=node.querySelector(".message-content");
-  const thinking=codeActivity(node,"Analisando a tarefa com Qwen3 Coder…");
+  const thinking=codeActivity(node,"Ava Code analisando o projeto…");
   scrollToBottom();
 
   try{
@@ -3951,86 +4171,132 @@ async function generateAvaCode(chat,requestContext=null){
       throw new Error("OpenRouter não está configurado no servidor.");
     }
 
-    const baseMessages=toApiMessages(chat,requestContext).slice(0,-1);
-    baseMessages.unshift({
+    const toolData = await fetchMcpTools();
+    const mcpTools = toolData.tools || [];
+    const openAiTools = openAiToolsFromMcp(mcpTools);
+
+    if(mcpTools.length){
+      const toolStep=codeActivity(node,`${mcpTools.length} ferramentas MCP disponíveis`);
+      toolStep.classList.remove("running");
+      toolStep.classList.add("done");
+    }
+
+    const messages=toApiMessages(chat,requestContext).slice(0,-1);
+    messages.unshift({
       role:"system",
       content:`You are the reasoning model inside Ava Code, an agentic coding product by Avalynx.
 
-Your job is software engineering: understand codebases, plan changes, write precise code, reason about bugs, propose patches, tests, and verification steps.
+You are a software-engineering agent, not a generic chatbot. Understand repositories, inspect evidence, use available MCP tools when they can answer the request more reliably, propose precise changes, and verify work.
 
-Rules:
-- Never claim a command ran, a file changed, or a test passed unless tool output proves it.
+Important tool rules:
+- MCP tools are real external actions.
+- Prefer read/search/list/get tools before write tools.
+- Use tools only when relevant.
+- Never claim a tool succeeded unless its tool result says it succeeded.
+- If the runtime denies or the user cancels a tool action, respect that decision.
+- When GitHub tools are available, use them to inspect actual repository files instead of guessing.
+- When Supabase tools are available, inspect schema before proposing SQL changes.
+- Treat Cloudflare deploy/DNS actions, repository writes, database mutations, uploads, deletes, secrets, commits, merges and production changes as consequential.
+- The runtime will request user approval for consequential MCP calls.
+
+Engineering rules:
 - Prefer complete, directly usable code and patches.
-- Identify files that should change.
+- Identify which files should change.
 - Preserve existing architecture unless a refactor is justified.
-- Think like a coding agent, not a generic chatbot.
-- The product identity is Ava Code. The underlying inference model is Qwen3 Coder when available through OpenRouter.`
+- Explain verification steps.
+- The product identity is Ava Code. The underlying model is Qwen3 Coder when available through OpenRouter.`
     });
 
-    const candidates=[
-      "qwen/qwen3-coder:free",
-      "openrouter/free"
-    ];
-
-    let data=null;
+    const candidates=["qwen/qwen3-coder:free","openrouter/free"];
     let selectedModel=null;
+    let finalContent="";
     let lastError=null;
 
-    for(const model of candidates){
-      const step=codeActivity(node,`Tentando ${model}…`);
+    // Maximum six model/tool rounds prevents runaway agents.
+    for(let round=0; round<6 && !finalContent; round++){
+      let payload=null;
 
-      try{
-        const res=await fetch("/api/openrouter/chat/completions",{
-          method:"POST",
-          headers:{"content-type":"application/json"},
-          body:JSON.stringify({
+      for(const model of candidates){
+        const modelStep=codeActivity(node,round===0 ? `Conectando a ${model}…` : `Continuando com ${model}…`);
+
+        try{
+          const requestBody={
             model,
-            messages:baseMessages,
+            messages,
             max_tokens:8192,
-            temperature:0.2
-          }),
-          signal:state.controller.signal
+            temperature:0.15
+          };
+
+          if(openAiTools.length){
+            requestBody.tools=openAiTools;
+            requestBody.tool_choice="auto";
+          }
+
+          const response=await fetch("/api/openrouter/chat/completions",{
+            method:"POST",
+            headers:{"content-type":"application/json"},
+            body:JSON.stringify(requestBody),
+            signal:state.controller.signal
+          });
+
+          const data=await response.json().catch(()=>({}));
+
+          if(!response.ok){
+            modelStep.classList.remove("running");
+            modelStep.classList.add("error");
+            modelStep.querySelector("span:last-child").textContent=`${model} indisponível`;
+            lastError=new Error(String(data?.error?.message || data?.error || `OpenRouter ${response.status}`));
+            continue;
+          }
+
+          payload=data;
+          selectedModel=data?.model || model;
+          modelStep.classList.remove("running");
+          modelStep.classList.add("done");
+          modelStep.querySelector("span:last-child").textContent=`Modelo: ${selectedModel}`;
+          break;
+        }catch(error){
+          if(error?.name==="AbortError") throw error;
+          lastError=error;
+          modelStep.classList.remove("running");
+          modelStep.classList.add("error");
+        }
+      }
+
+      if(!payload){
+        throw lastError || new Error("Nenhum modelo gratuito do Ava Code ficou disponível.");
+      }
+
+      const message=payload?.choices?.[0]?.message || {};
+      const toolCalls=Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
+      if(toolCalls.length){
+        messages.push({
+          role:"assistant",
+          content:message.content || "",
+          tool_calls:toolCalls
         });
 
-        const payload=await res.json().catch(()=>({}));
-
-        if(!res.ok){
-          const message=
-            payload?.error?.message ||
-            payload?.error ||
-            `OpenRouter ${res.status}`;
-
-          step.classList.remove("running");
-          step.classList.add("error");
-          step.querySelector("span:last-child").textContent=`${model} indisponível`;
-          lastError=new Error(String(message));
-          continue;
+        for(const toolCall of toolCalls){
+          const toolResult=await callMcpToolFromCode(toolCall,node);
+          messages.push(toolResult);
         }
 
-        data=payload;
-        selectedModel=data?.model || model;
-        step.classList.remove("running");
-        step.classList.add("done");
-        step.querySelector("span:last-child").textContent=`Modelo selecionado: ${selectedModel}`;
-        break;
-      }catch(error){
-        if(error?.name==="AbortError") throw error;
-        lastError=error;
-        step.classList.remove("running");
-        step.classList.add("error");
-        step.querySelector("span:last-child").textContent=`Falha em ${model}`;
+        continue;
       }
+
+      finalContent=message.content || "";
     }
 
-    if(!data){
-      throw lastError || new Error("Nenhum modelo gratuito de coding ficou disponível.");
+    if(!finalContent){
+      throw new Error("Ava Code atingiu o limite de etapas do agente sem produzir uma resposta final.");
     }
 
     thinking.classList.remove("running");
     thinking.classList.add("done");
-    thinking.querySelector("span:last-child").textContent="Ava Code concluiu o raciocínio";
+    thinking.querySelector("span:last-child").textContent="Ava Code concluiu";
 
-    assistantMsg.content=data?.choices?.[0]?.message?.content || "";
+    assistantMsg.content=finalContent;
     assistantMsg.model=selectedModel || "qwen/qwen3-coder:free";
 
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
@@ -4038,11 +4304,12 @@ Rules:
     finalizeRichMessage(node);
     persist();
 
-    await maybeAutoRenameChat(chat).catch(console.warn);
+    await autoRenameChat(chat).catch(console.warn);
   }catch(e){
     assistantMsg.content=`Ava Code não conseguiu responder: ${String(e.message||e)}`;
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
+    thinking.classList.remove("running");
     thinking.classList.add("error");
     persist();
   }finally{
@@ -4776,7 +5043,9 @@ els.file.onchange = () => {
 };
 
 $$(".starter").forEach(btn => btn.onclick = () => {
-  els.prompt.value = btn.textContent;
+  const codeMode = state.appMode === "code";
+  const prompt = codeMode ? btn.dataset.code : btn.dataset.chat;
+  els.prompt.value = prompt || btn.textContent;
   autoGrow();
   els.prompt.focus();
 });
@@ -4800,6 +5069,14 @@ $$(".filter-pill").forEach(btn => {
 });
 
 
+
+document.querySelector("#mcpToolBtn")?.addEventListener("click", async () => {
+  const dialog = document.querySelector("#mcpDialog");
+  if (dialog && !dialog.open) dialog.showModal();
+  await renderMcpRegistry();
+});
+document.querySelector("#closeMcpDialog")?.addEventListener("click", () => document.querySelector("#mcpDialog")?.close());
+document.querySelector("#refreshMcpBtn")?.addEventListener("click", renderMcpRegistry);
 
 document.querySelector("#chatModeBtn")?.addEventListener("click",()=>setAvaMode("chat"));
 document.querySelector("#codeModeBtn")?.addEventListener("click",()=>setAvaMode("code"));
