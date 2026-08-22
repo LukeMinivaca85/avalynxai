@@ -642,3 +642,15 @@ Changes:
 - Detection of false "no access" responses.
 - Intent matching for common explicit actions such as GitHub issue creation.
 - Runtime retry with forced `tool_choice` when the model ignores a clearly matching tool.
+
+
+## v6.3.2 — Infrastructure reliability fix
+
+Fixes errors observed in production:
+- `syncSettingsForm is not defined` → bootstrap now calls the existing `syncSettingsUI`.
+- MCP tool exceptions no longer bubble up as only `Ava server failed`; `/api/mcp/call` returns provider/tool detail.
+- Ava Code surfaces the real MCP upstream error and gives that exact error back to the model.
+- The model is explicitly forbidden from inventing a different connector explanation after a tool error.
+- OpenRouter 404s that clearly indicate Ava's own missing proxy route stop the model-fallback loop as infrastructure errors.
+- Proxy responses expose `x-ava-proxy-provider` and `x-ava-proxy-route` diagnostic headers.
+- Service Worker navigation is network-first with a guaranteed cached `/index.html` fallback and never caches `/api/*`.

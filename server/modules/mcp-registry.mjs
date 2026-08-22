@@ -258,33 +258,47 @@ export async function handleMcp(req, res, url, body = {}) {
   if (path === "/call" && req.method === "POST") {
     const fn = String(body.functionName || "");
     const match = findByFunctionName(registry, fn);
-    if (!match) return send(res, 404, { error: "Ferramenta MCP não encontrada." });
+    if (!match) return send(res, 404, { error: "Ferramenta MCP não encontrada.", code: "MCP_TOOL_NOT_FOUND" });
 
-    const tool = await resolveRealToolName(match.server, match.encodedTool);
-    if (!tool) return send(res, 404, { error: "Ferramenta MCP não encontrada no servidor." });
+    try {
+      const tool = await resolveRealToolName(match.server, match.encodedTool);
+      if (!tool) return send(res, 404, { error: "Ferramenta MCP não encontrada no servidor.", code: "MCP_TOOL_NOT_FOUND" });
 
-    if (tool.risk !== "read" && body.approved !== true) {
-      return send(res, 409, {
-        approvalRequired: true,
-        risk: tool.risk,
+      if (tool.risk !== "read" && body.approved !== true) {
+        return send(res, 409, {
+          approvalRequired: true,
+          risk: tool.risk,
+          server: match.server.name,
+          tool: tool.name,
+          message: `${match.server.name} · ${tool.name} pode alterar dados ou executar uma ação.`
+        });
+      }
+
+      const session = await ensureSession(match.server);
+      const result = await postRpc(match.server, "tools/call", {
+        name: tool.name,
+        arguments: body.arguments && typeof body.arguments === "object" ? body.arguments : {}
+      }, session.sessionId);
+
+      return send(res, 200, {
+        ok: true,
         server: match.server.name,
         tool: tool.name,
-        message: `${match.server.name} · ${tool.name} pode alterar dados ou executar uma ação.`
+        result: result.result
+      });
+    } catch (error) {
+      console.error("Ava MCP tool call failed", {
+        server: match.server.id,
+        functionName: fn,
+        error: String(error?.message || error)
+      });
+      return send(res, 502, {
+        error: "MCP tool call failed.",
+        code: "MCP_UPSTREAM_ERROR",
+        server: match.server.name,
+        detail: String(error?.message || error)
       });
     }
-
-    const session = await ensureSession(match.server);
-    const result = await postRpc(match.server, "tools/call", {
-      name: tool.name,
-      arguments: body.arguments && typeof body.arguments === "object" ? body.arguments : {}
-    }, session.sessionId);
-
-    return send(res, 200, {
-      ok: true,
-      server: match.server.name,
-      tool: tool.name,
-      result: result.result
-    });
   }
 
   return send(res, 404, { error: "Rota MCP não encontrada." });

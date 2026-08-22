@@ -106,7 +106,12 @@ const server = http.createServer(async (req, res) => {
     serveStatic(req, res, url);
   } catch (error) {
     console.error("Ava server error:", error);
-    sendJSON(res, 502, { error: "Ava server failed.", detail: String(error?.message || error) });
+    sendJSON(res, 502, {
+      error: "Ava server failed.",
+      code: "AVA_SERVER_ERROR",
+      route: (() => { try { return new URL(req.url, "http://localhost").pathname; } catch { return ""; } })(),
+      detail: String(error?.message || error)
+    });
   }
 });
 

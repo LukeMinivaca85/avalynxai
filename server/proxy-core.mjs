@@ -140,6 +140,9 @@ export async function proxyRequest({ pathname, search = "", method, headers, bod
     if (value) passthroughHeaders[name] = value;
   }
 
+  passthroughHeaders["x-ava-proxy-provider"] = provider;
+  passthroughHeaders["x-ava-proxy-route"] = pathname;
+
   return {
     status: response.status,
     headers: passthroughHeaders,

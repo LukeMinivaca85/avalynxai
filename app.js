@@ -3992,7 +3992,8 @@ async function callMcpToolFromCode(toolCall, node) {
 
   if (!response.ok) {
     activity.classList.add("error");
-    activity.querySelector("span:last-child").textContent = `MCP falhou · ${data.error || response.status}`;
+    const detail = data.detail || data.error || `HTTP ${response.status}`;
+    activity.querySelector("span:last-child").textContent = `MCP falhou · ${detail}`;
   } else {
     activity.classList.add("done");
     activity.querySelector("span:last-child").textContent = `${data.server || "MCP"} · ${data.tool || functionName} concluído`;
@@ -4001,7 +4002,16 @@ async function callMcpToolFromCode(toolCall, node) {
   return {
     role: "tool",
     tool_call_id: toolCall.id,
-    content: JSON.stringify(response.ok ? data.result : { error: data.error || `HTTP ${response.status}` }).slice(0, 50000)
+    content: JSON.stringify(
+      response.ok
+        ? data.result
+        : {
+            error: data.error || `HTTP ${response.status}`,
+            code: data.code || "MCP_ERROR",
+            detail: data.detail || null,
+            server: data.server || null
+          }
+    ).slice(0, 50000)
   };
 }
 
@@ -4276,6 +4286,7 @@ MANDATORY TOOL USE
 SAFETY
 - Prefer read/search/list/get tools before write tools.
 - Never claim a tool succeeded unless its returned result proves success.
+- If a tool returns an error, report the concrete returned error. Do NOT invent a different explanation such as "temporary connector problem", "credentials unavailable", or "service limitation" unless the tool result actually says that.
 - Respect denied approval.
 - Writes, deploys, database mutations, DNS changes, uploads, deletes, secret changes, commits, merges, permission changes and production operations are consequential and may require runtime approval.
 
@@ -4323,10 +4334,19 @@ ENGINEERING
           const data=await response.json().catch(()=>({}));
 
           if(!response.ok){
+            const rawError = data?.error?.message || data?.error || `OpenRouter ${response.status}`;
+            const errorText = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
+
             modelStep.classList.remove("running");
             modelStep.classList.add("error");
+
+            if(response.status === 404 && /unknown api route|cannot post|not found/i.test(errorText)){
+              modelStep.querySelector("span:last-child").textContent="Backend Ava Code sem rota OpenRouter";
+              throw new Error(`Falha de infraestrutura: /api/openrouter/chat/completions retornou 404 (${errorText}).`);
+            }
+
             modelStep.querySelector("span:last-child").textContent=`${model} indisponível`;
-            lastError=new Error(String(data?.error?.message || data?.error || `OpenRouter ${response.status}`));
+            lastError=new Error(errorText);
             continue;
           }
 
@@ -5256,7 +5276,7 @@ async function bootstrapAva() {
   autoGrow();
   requestAnimationFrame(syncIOSVisualViewport);
   await loadServerConfig();
-  syncSettingsForm();
+  syncSettingsUI();
 }
 
 window.addEventListener("popstate", () => {
