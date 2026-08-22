@@ -3896,6 +3896,17 @@ function webRequestNeedsFreshness(text) {
 
 
 
+
+const MCP_BRANDS={
+ github:["GitHub","https://github.githubassets.com/favicons/favicon.svg"],supabase:["Supabase","https://supabase.com/favicon/favicon-32x32.png"],cloudflare:["Cloudflare","https://www.cloudflare.com/favicon.ico"],"google-drive":["Google Drive","https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png"],vercel:["Vercel","https://vercel.com/favicon.ico"],render:["Render","https://render.com/favicon.ico"],stripe:["Stripe","https://stripe.com/favicon.ico"],sentry:["Sentry","https://sentry.io/favicon.ico"]};
+function brandIcon(id,fallback="MCP"){const b=MCP_BRANDS[id];return b?`<img class="mcp-brand-logo" src="${b[1]}" alt="" referrerpolicy="no-referrer">`:`<span>${escapeHtml(fallback)}</span>`}
+const MCP_MENTIONS=Object.entries(MCP_BRANDS).map(([id,v])=>({id,label:v[0]}));
+function mentionedMcpProviders(text){return MCP_MENTIONS.filter(p=>new RegExp(`@${p.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\s|$)`,"i").test(text)).map(p=>p.id)}
+function mentionMenu(){let x=document.querySelector("#mcpMentionMenu");if(!x){x=document.createElement("div");x.id="mcpMentionMenu";x.className="mcp-mention-menu hidden";document.querySelector(".composer")?.appendChild(x)}return x}
+function renderMcpMentionMenu(){const x=mentionMenu();if(state.appMode!=="code"){x.classList.add("hidden");return}const pos=els.prompt.selectionStart??els.prompt.value.length,b=els.prompt.value.slice(0,pos),m=b.match(/(?:^|\s)@([A-Za-z-]*)$/);if(!m){x.classList.add("hidden");return}const q=m[1].toLowerCase(),start=pos-m[1].length-1,items=MCP_MENTIONS.filter(p=>p.label.toLowerCase().includes(q)||p.id.includes(q));x.innerHTML=items.map(p=>`<button type="button" class="mcp-mention-option" data-id="${p.id}" data-label="${p.label}"><span>${brandIcon(p.id,p.label.slice(0,2))}</span>@${p.label}</button>`).join("");x.classList.toggle("hidden",!items.length);x.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{els.prompt.value=els.prompt.value.slice(0,start)+`@${btn.dataset.label} `+els.prompt.value.slice(pos);x.classList.add("hidden");els.prompt.focus();autoGrow()})}
+const AVA_LOCAL_ARTIFACT_TOOL={type:"function",function:{name:"ava__create_artifact",description:"Create a real downloadable text/code file when the user asks for a file.",parameters:{type:"object",additionalProperties:false,required:["name","content"],properties:{name:{type:"string"},content:{type:"string"}}}}};
+async function createSafeArtifact(tc,node){let a={};try{a=JSON.parse(tc.function.arguments||"{}")}catch{}const r=await fetch("/api/artifacts/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(a)}),d=await r.json();if(!r.ok)return{role:"tool",tool_call_id:tc.id,content:JSON.stringify({error:d.error})};const c=document.createElement("div");c.className="ava-artifact-card";c.innerHTML=`<div><strong>${escapeHtml(d.name)}</strong><span>${Math.max(1,Math.round(d.bytes/1024))} KB · 30 min</span></div><a href="${d.downloadUrl}" download>↓ Baixar</a>`;node.appendChild(c);return{role:"tool",tool_call_id:tc.id,content:JSON.stringify(d)}}
+
 const MCP_PRESET_ICONS = {
   github: "GH",
   supabase: "SB",
@@ -4073,7 +4084,7 @@ async function renderMcpRegistry() {
       const card = document.createElement("div");
       card.className = "mcp-server-card configured";
       card.innerHTML = `
-        <div class="mcp-server-icon">${escapeHtml(provider.icon)}</div>
+        <div class="mcp-server-icon">${brandIcon(provider.id,provider.icon)}</div>
         <div class="mcp-server-copy">
           <strong>${escapeHtml(provider.name)}</strong>
           <span>${provider.count} ferramenta${provider.count===1?"":"s"} disponível${provider.count===1?"":"is"}</span>
@@ -4125,7 +4136,10 @@ function syncAvaModeUI(){
     if(p)p.textContent="Ava I combina raciocínio profundo, visão, arquivos e memória local em um único chat.";
   }
 
-  $$(".starter").forEach(btn => {
+  els.prompt.addEventListener("input",renderMcpMentionMenu);
+els.prompt.addEventListener("click",renderMcpMentionMenu);
+
+$$(".starter").forEach(btn => {
     const next = code ? btn.dataset.code : btn.dataset.chat;
     if (next) btn.textContent = next;
   });
@@ -4172,8 +4186,11 @@ async function generateAvaCode(chat,requestContext=null){
     }
 
     const toolData = await fetchMcpTools();
-    const mcpTools = toolData.tools || [];
-    const openAiTools = openAiToolsFromMcp(mcpTools);
+    let mcpTools = toolData.tools || [];
+    const latestUserText=[...chat.messages].reverse().find(m=>m.role==="user")?.content||"";
+    const mentioned=mentionedMcpProviders(latestUserText);
+    if(mentioned.length)mcpTools=mcpTools.filter(t=>{const p=inferMcpProvider(t);return p&&mentioned.includes(p.id)});
+    const openAiTools = [AVA_LOCAL_ARTIFACT_TOOL,...openAiToolsFromMcp(mcpTools)];
 
     if(mcpTools.length){
       const toolStep=codeActivity(node,`${mcpTools.length} ferramentas MCP disponíveis`);
@@ -4189,7 +4206,7 @@ async function generateAvaCode(chat,requestContext=null){
 You are a software-engineering agent, not a generic chatbot. Understand repositories, inspect evidence, use available MCP tools when they can answer the request more reliably, propose precise changes, and verify work.
 
 Important tool rules:
-- MCP tools are real external actions.
+- MCP tools are real external actions.\n- Respect explicit @provider mentions and prefer only those MCP tools.\n- When the user asks for a downloadable file, use ava__create_artifact; do not pretend a Markdown block is a file.
 - Prefer read/search/list/get tools before write tools.
 - Use tools only when relevant.
 - Never claim a tool succeeded unless its tool result says it succeeded.
@@ -4278,7 +4295,7 @@ Engineering rules:
         });
 
         for(const toolCall of toolCalls){
-          const toolResult=await callMcpToolFromCode(toolCall,node);
+          const toolResult=toolCall?.function?.name==="ava__create_artifact"?await createSafeArtifact(toolCall,node):await callMcpToolFromCode(toolCall,node);
           messages.push(toolResult);
         }
 

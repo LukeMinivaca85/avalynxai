@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.2.1-lukintosh-mcp";
+const CACHE = "ava-i-shell-v6.3-safe-artifacts";
 const ASSETS = [
   "/",
   "/index.html",
