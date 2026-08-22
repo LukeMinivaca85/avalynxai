@@ -319,7 +319,11 @@ You are Ava I — created by Lukintosh Corporation.
 Your truth standard is:
 Truth first. Evidence before confidence. Uncertainty before fabrication.
 Plausible is not the same as true.
-Never invent.`;
+Never invent.
+- The Ava runtime supplies the real current date/time on every request.
+- For current/changing facts, use live web search when available.
+- Never fake freshness from model memory.
+`;
 
 const DEFAULT_MODEL_VERSION = 4;
 const DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
@@ -1315,6 +1319,7 @@ async function generateImageResponse(chat, promptText) {
     contentNode.innerHTML = renderMarkdown(assistantMsg.content);
     finalizeRichMessage(node);
     renderMessageExtras(node, assistantMsg);
+    wireSafeLinks(node);
     persist();
     renderChatList();
     autoRenameChat(chat).catch(console.warn);
@@ -1548,6 +1553,44 @@ function deleteEditingAgent() {
   }
 }
 
+
+
+function avaCurrentDateContext() {
+  const now = new Date();
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const local = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: timezone, year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false
+  }).format(now);
+  return { iso: now.toISOString(), local, timezone, year: now.getFullYear() };
+}
+
+function freshWebSystemContext() {
+  const d = avaCurrentDateContext();
+  return `CURRENT REAL-WORLD DATE/TIME
+Local: ${d.local}
+Timezone: ${d.timezone}
+ISO: ${d.iso}
+Current year: ${d.year}
+
+Freshness policy:
+- "today", "now", "currently", "latest", "this year", "recent", "hoje", "agora", "atualmente", "mais recente" and equivalents require fresh information.
+- If a live web/search tool is available, search before answering current or changing facts.
+- Prefer sources from the current year, and preferably today/recent days for "today/latest" requests.
+- Never present stale model memory as if it were live information.
+- If no live search tool is available, explicitly say live web search is unavailable for that turn.`;
+}
+
+function isWebSearchMcpTool(tool) {
+  const text = `${tool?.server?.id||""} ${tool?.server?.name||""} ${tool?.name||""} ${tool?.description||""}`.toLowerCase();
+  return /(web|search|browse|browser|internet|serp|news|fetch|crawl|url)/.test(text);
+}
+
+function userRequestedFreshWeb(chat) {
+  const msg=[...chat.messages].reverse().find(m=>m.role==="user");
+  const text=String(msg?.content||"");
+  return !!msg?.webSearch || /\b(hoje|agora|atualmente|mais recente|últim[oa]s?|este ano|2026|today|now|currently|latest|recent|this year)\b/i.test(text);
+}
 
 function nvidiaReady() { return state.serverConfig?.nvidia === true; }
 
@@ -2093,6 +2136,10 @@ function renderMarkdown(text) {
   });
 
   let s = escapeHtml(source);
+  // Markdown links. The click handler later applies Ava's external-site warning.
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    '<a class="ava-external-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
   s = s
     .replace(/^### (.*)$/gm, "<h3>$1</h3>")
     .replace(/^## (.*)$/gm, "<h2>$1</h2>")
@@ -2207,8 +2254,77 @@ function wireWritingCopy(scope) {
   });
 }
 
+
+const AVA_TRUSTED_HOSTS = new Set([
+  location.hostname,
+  "lukintosh.com",
+  "ai.lukintosh.com",
+  "mcp.lukintosh.com"
+]);
+
+function isTrustedAvaUrl(url) {
+  try {
+    const u = new URL(url, location.href);
+    if (!["http:","https:"].includes(u.protocol)) return false;
+    if (u.origin === location.origin) return true;
+    return AVA_TRUSTED_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function openExternalLinkWarning(url) {
+  let parsed;
+  try { parsed = new URL(url, location.href); } catch { return; }
+  if (!["http:","https:"].includes(parsed.protocol)) return;
+
+  if (isTrustedAvaUrl(parsed.href)) {
+    window.open(parsed.href, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const dialog = document.querySelector("#externalLinkDialog");
+  const host = document.querySelector("#externalLinkHost");
+  const shownUrl = document.querySelector("#externalLinkUrl");
+  const continueBtn = document.querySelector("#externalLinkContinue");
+
+  if (!dialog || !continueBtn) {
+    const ok = window.confirm(`Você está saindo da Avalynx para ${parsed.hostname}. Deseja continuar?`);
+    if (ok) window.open(parsed.href, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  host.textContent = parsed.hostname;
+  shownUrl.textContent = parsed.href;
+  continueBtn.onclick = () => {
+    dialog.close();
+    window.open(parsed.href, "_blank", "noopener,noreferrer");
+  };
+  if (!dialog.open) dialog.showModal();
+}
+
+function wireSafeLinks(scope=document) {
+  scope.querySelectorAll('a[href]').forEach(a => {
+    if (a.dataset.avaSafeLink === "1") return;
+    a.dataset.avaSafeLink = "1";
+    a.setAttribute("rel","noopener noreferrer");
+    a.addEventListener("click", event => {
+      const href = a.href;
+      if (!href || href.startsWith("javascript:")) {
+        event.preventDefault();
+        return;
+      }
+      if (isTrustedAvaUrl(href)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openExternalLinkWarning(href);
+    });
+  });
+}
+
 function finalizeRichMessage(scope) {
   highlightCodeBlocks(scope);
+  wireSafeLinks(scope);
   wireCodeCopy(scope);
   wireWritingCopy(scope);
 
@@ -3906,9 +4022,103 @@ function webRequestNeedsFreshness(text) {
 
 
 
+
+const AVA_AGENT_MARKETPLACE = [
+  {id:"coder",name:"Ava Code",icon:"</>",description:"Engenharia de software, repositórios, debugging e MCPs de desenvolvimento.",prompt:"You are Ava Code, a precise agentic software engineer."},
+  {id:"researcher",name:"Ava Research",icon:"⌕",description:"Pesquisa, comparação de fontes e síntese.",prompt:"You are Ava Research. Investigate carefully and distinguish evidence from inference."},
+  {id:"writer",name:"Ava Writer",icon:"✎",description:"Textos, documentos, revisão e reescrita.",prompt:"You are Ava Writer. Produce clear, polished writing adapted to the user's intent."},
+  {id:"analyst",name:"Ava Analyst",icon:"∑",description:"Dados, tabelas, métricas e análises.",prompt:"You are Ava Analyst. Analyze structured information carefully and explain conclusions."},
+  {id:"designer",name:"Ava Creative",icon:"◇",description:"Ideação visual, branding e fluxos criativos.",prompt:"You are Ava Creative. Help with visual concepts, branding, creative direction and production workflows."}
+];
+
+const AVA_MCP_MARKETPLACE = [
+  {id:"github",name:"GitHub",icon:"GH",category:"Developer",description:"Repos, issues, pull requests, arquivos e ações."},
+  {id:"supabase",name:"Supabase",icon:"SB",category:"Developer",description:"Postgres, schema, auth e projetos."},
+  {id:"cloudflare",name:"Cloudflare",icon:"CF",category:"Infrastructure",description:"Workers, DNS, logs e infraestrutura."},
+  {id:"google-drive",name:"Google Drive",icon:"GD",category:"Productivity",description:"Arquivos e documentos do Drive."},
+  {id:"gmail",name:"Gmail",icon:"GM",category:"Productivity",description:"E-mails, busca e fluxos de comunicação."},
+  {id:"slack",name:"Slack",icon:"SL",category:"Communication",description:"Canais, mensagens, threads e colaboração."},
+  {id:"zoom",name:"Zoom",icon:"ZM",category:"Communication",description:"Reuniões, gravações e fluxos Zoom via MCP compatível."},
+  {id:"canva",name:"Canva",icon:"CA",category:"Creative",description:"Designs e fluxos criativos via MCP compatível."},
+  {id:"adobe",name:"Adobe",icon:"AD",category:"Creative",description:"Creative Cloud e documentos via MCP compatível."},
+  {id:"vercel",name:"Vercel",icon:"▲",category:"Infrastructure",description:"Deploys e projetos Vercel."},
+  {id:"render",name:"Render",icon:"R",category:"Infrastructure",description:"Serviços, deploys e logs Render."},
+  {id:"stripe",name:"Stripe",icon:"S",category:"Business",description:"Produtos, preços, clientes e pagamentos."},
+  {id:"sentry",name:"Sentry",icon:"SE",category:"Developer",description:"Erros, traces e observabilidade."}
+];
+
+function installedMcpIds() {
+  try { return new Set(JSON.parse(localStorage.getItem("ava-installed-mcps") || "[]")); }
+  catch { return new Set(); }
+}
+function saveInstalledMcpIds(set) {
+  localStorage.setItem("ava-installed-mcps", JSON.stringify([...set]));
+}
+
+function installMarketplaceAgent(template) {
+  if (!Array.isArray(state.agents)) state.agents = [];
+  if (state.agents.some(a => a.marketplaceId === template.id)) return;
+  state.agents.push({
+    id: uid(),
+    marketplaceId: template.id,
+    name: template.name,
+    symbol: template.icon,
+    systemPrompt: template.prompt,
+    model: "nvidia/nemotron-3-ultra-550b-a55b",
+    createdAt: Date.now()
+  });
+  persist();
+  renderAgentList();
+  renderStudioMarketplaces();
+}
+
+function toggleMarketplaceMcp(id) {
+  const set = installedMcpIds();
+  if (set.has(id)) set.delete(id); else set.add(id);
+  saveInstalledMcpIds(set);
+  renderStudioMarketplaces();
+}
+
+function renderStudioMarketplaces() {
+  const agentGrid=document.querySelector("#agentMarketplaceGrid");
+  const mcpGrid=document.querySelector("#mcpMarketplaceGrid");
+  if (agentGrid) {
+    agentGrid.innerHTML=AVA_AGENT_MARKETPLACE.map(item => {
+      const installed=Array.isArray(state.agents)&&state.agents.some(a=>a.marketplaceId===item.id);
+      return `<article class="studio-market-card">
+        <div class="studio-market-icon">${escapeHtml(item.icon)}</div>
+        <div class="studio-market-copy"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.description)}</span></div>
+        <button type="button" class="studio-install-btn" data-agent-market="${item.id}" ${installed?"disabled":""}>${installed?"Instalado":"Adicionar"}</button>
+      </article>`;
+    }).join("");
+    agentGrid.querySelectorAll("[data-agent-market]").forEach(btn=>btn.onclick=()=>{
+      const item=AVA_AGENT_MARKETPLACE.find(x=>x.id===btn.dataset.agentMarket);
+      if(item)installMarketplaceAgent(item);
+    });
+  }
+  if (mcpGrid) {
+    const installed=installedMcpIds();
+    mcpGrid.innerHTML=AVA_MCP_MARKETPLACE.map(item => `
+      <article class="studio-market-card">
+        <div class="studio-market-icon">${mcpBrandIcon?.(item.id,item.icon) || escapeHtml(item.icon)}</div>
+        <div class="studio-market-copy"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.category)} · ${escapeHtml(item.description)}</span></div>
+        <button type="button" class="studio-install-btn ${installed.has(item.id)?"installed":""}" data-mcp-market="${item.id}">${installed.has(item.id)?"Ativado":"Ativar"}</button>
+      </article>`).join("");
+    mcpGrid.querySelectorAll("[data-mcp-market]").forEach(btn=>btn.onclick=()=>toggleMarketplaceMcp(btn.dataset.mcpMarket));
+  }
+}
+
+function setupStudioMarketplaceTabs() {
+  document.querySelectorAll("[data-market-tab]").forEach(btn=>btn.onclick=()=>{
+    document.querySelectorAll("[data-market-tab]").forEach(x=>x.classList.toggle("active",x===btn));
+    document.querySelectorAll("[data-market-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.marketPanel!==btn.dataset.marketTab));
+  });
+  renderStudioMarketplaces();
+}
+
 const MCP_BRANDS={
- github:["GitHub","https://github.githubassets.com/favicons/favicon.svg"],supabase:["Supabase","https://supabase.com/favicon/favicon-32x32.png"],cloudflare:["Cloudflare","https://www.cloudflare.com/favicon.ico"],"google-drive":["Google Drive","https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png"],vercel:["Vercel","https://vercel.com/favicon.ico"],render:["Render","https://render.com/favicon.ico"],stripe:["Stripe","https://stripe.com/favicon.ico"],sentry:["Sentry","https://sentry.io/favicon.ico"]};
-function brandIcon(id,fallback="MCP"){const b=MCP_BRANDS[id];return b?`<img class="mcp-brand-logo" src="${b[1]}" alt="" referrerpolicy="no-referrer">`:`<span aria-hidden="true">${escapeHtml(fallback)}</span>`}
+ github:["GitHub","https://github.githubassets.com/favicons/favicon.svg"],supabase:["Supabase","https://supabase.com/favicon/favicon-32x32.png"],cloudflare:["Cloudflare","https://www.cloudflare.com/favicon.ico"],"google-drive":["Google Drive","https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png"],vercel:["Vercel","https://vercel.com/favicon.ico"],render:["Render","https://render.com/favicon.ico"],stripe:["Stripe","https://stripe.com/favicon.ico"],sentry:["Sentry","https://sentry.io/favicon.ico"],gmail:["Gmail",""],slack:["Slack",""],zoom:["Zoom",""],canva:["Canva",""],adobe:["Adobe",""]};
+function brandIcon(id,fallback="MCP"){const b=MCP_BRANDS[id];return b?.[1]?`<img class="mcp-brand-logo" src="${b[1]}" alt="" referrerpolicy="no-referrer">`:`<span aria-hidden="true">${escapeHtml(fallback)}</span>`}
 const MCP_MENTIONS=Object.entries(MCP_BRANDS).map(([id,v])=>({id,label:v[0]}));
 function mentionedMcpProviders(text){return MCP_MENTIONS.filter(p=>new RegExp(`@${p.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\s|$)`,"i").test(text)).map(p=>p.id)}
 function mentionMenu(){let x=document.querySelector("#mcpMentionMenu");if(!x){x=document.createElement("div");x.id="mcpMentionMenu";x.className="mcp-mention-menu hidden";document.querySelector(".composer")?.appendChild(x)}return x}
@@ -4034,6 +4244,11 @@ function inferMcpProvider(tool) {
     ["google_drive", "Google Drive", "GD"],
     ["google-drive", "Google Drive", "GD"],
     ["drive", "Google Drive", "GD"],
+    ["gmail", "Gmail", "GM"],
+    ["slack", "Slack", "SL"],
+    ["zoom", "Zoom", "ZM"],
+    ["canva", "Canva", "CA"],
+    ["adobe", "Adobe", "AD"],
     ["vercel", "Vercel", "▲"],
     ["render", "Render", "R"],
     ["stripe", "Stripe", "S"],
@@ -4266,7 +4481,7 @@ async function generateAvaCode(chat,requestContext=null){
     const messages=toApiMessages(chat,requestContext).slice(0,-1);
     messages.unshift({
       role:"system",
-      content:`You are Ava Code, an agentic software-engineering product by Avalynx.
+      content:`${freshWebSystemContext()}\n\nYou are Ava Code, an agentic software-engineering product by Avalynx.
 
 You are NOT a generic chatbot. You are an engineering agent with real external tools supplied dynamically by the runtime.
 
@@ -4505,6 +4720,79 @@ async function continueLongResponse(chat,msg,model,ctx,signal){
   }
 }
 
+
+async function maybeRunChatMcp(chat, requestContext, signal) {
+  const toolData = await fetchMcpTools().catch(() => ({tools:[]}));
+  let mcpTools = toolData.tools || [];
+  if (!mcpTools.length) return null;
+
+  const latestUserText = [...chat.messages].reverse().find(m=>m.role==="user")?.content || "";
+  const mentioned = mentionedMcpProviders(latestUserText);
+  const installed = installedMcpIds();
+
+  // In Chat, explicit @mentions always win. Otherwise only marketplace-enabled MCPs are exposed.
+  if (mentioned.length) {
+    mcpTools = mcpTools.filter(tool => {
+      const p=inferMcpProvider(tool);
+      return p && mentioned.includes(p.id);
+    });
+  } else if (installed.size) {
+    mcpTools = mcpTools.filter(tool => {
+      const p=inferMcpProvider(tool);
+      return p && installed.has(p.id);
+    });
+  } else {
+    return null;
+  }
+
+  const freshRequested = userRequestedFreshWeb(chat);
+  const webMcpTools = mcpTools.filter(isWebSearchMcpTool);
+  if (freshRequested && webMcpTools.length) mcpTools = webMcpTools;
+
+  const openAiTools = openAiToolsFromMcp(mcpTools);
+  if (!openAiTools.length) {
+    return freshRequested
+      ? "Não consegui fazer pesquisa web ao vivo nesta resposta porque nenhuma ferramenta de busca está conectada à Ava."
+      : null;
+  }
+
+  const messages = toApiMessages(chat, requestContext).slice(0,-1);
+  messages.unshift({
+    role:"system",
+    content:`You are Ava I with real MCP tools. If the user\'s request requires an available MCP tool, use it. Never claim you lack access when the matching tool is present. Prefer reads before writes; the runtime handles approval for consequential actions.\n\n${freshWebSystemContext()}`
+  });
+
+  for (let round=0; round<5; round++) {
+    const response = await fetch("/api/nvidia/chat/completions",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"nvidia/nemotron-3-ultra-550b-a55b",
+        messages,
+        tools:openAiTools,
+        tool_choice:freshRequested && webMcpTools.length ? "required" : "auto",
+        max_tokens:65536,
+        temperature:0.2
+      }),
+      signal
+    });
+    if (!response.ok) return null;
+
+    const data=await response.json().catch(()=>({}));
+    const message=data?.choices?.[0]?.message||{};
+    const calls=Array.isArray(message.tool_calls)?message.tool_calls:[];
+
+    if (!calls.length) return message.content || null;
+
+    messages.push({role:"assistant",content:message.content||"",tool_calls:calls});
+    for (const call of calls) {
+      const toolResult = await callMcpToolFromCode(call, document.querySelector('.message:last-child') || document.body);
+      messages.push(toolResult);
+    }
+  }
+  return null;
+}
+
 async function generateAssistant(chat, requestContext = null) {
   state.generating = true;
   state.controller = new AbortController();
@@ -4520,6 +4808,15 @@ async function generateAssistant(chat, requestContext = null) {
   scrollToBottom();
 
   try {
+    const mcpAnswer = await maybeRunChatMcp(chat, requestContext, state.controller.signal);
+    if (mcpAnswer) {
+      assistantMsg.content = mcpAnswer;
+      contentNode.innerHTML = renderMarkdown(assistantMsg.content);
+      finalizeRichMessage(node);
+      persist();
+      return;
+    }
+
     const activeAgent = activeAgentForChat(chat);
     const requestModel = activeAgent?.model || "nvidia/nemotron-3-ultra-550b-a55b";
     if(!nvidiaReady()) throw Object.assign(new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY."),{status:503});
@@ -4685,6 +4982,7 @@ Os anexos continuam no composer para você poder tentar novamente.`;
     contentNode.innerHTML = renderMarkdown(assistantMsg.content);
     wireCodeCopy(contentNode);
     renderMessageExtras(node, assistantMsg);
+    wireSafeLinks(node);
     persist();
     renderChatList();
     autoRenameChat(chat).catch(console.warn);
@@ -5219,8 +5517,21 @@ document.addEventListener("avai:history-storage-trimmed", () => {
   console.info("Ava I: previews antigos foram removidos do armazenamento persistente para evitar estouro de quota.");
 });
 
+
+function setupTechnicalSecretInputs() {
+  document.querySelectorAll(".technical-secret-input").forEach(input => {
+    input.type = "text";
+    input.autocomplete = "off";
+    input.setAttribute("data-1p-ignore","true");
+    input.setAttribute("data-lpignore","true");
+    input.setAttribute("data-form-type","other");
+    input.setAttribute("aria-description","Chave técnica de API. Não é senha de conta.");
+  });
+}
+
 async function bootstrapAva() {
   setupIOSPWA();
+  setupTechnicalSecretInputs();
   loadState();
 
   const routed = activateChatFromURL();
@@ -5235,6 +5546,7 @@ async function bootstrapAva() {
   syncAvaModeUI();
   renderAll();
   renderAgentList();
+  setupStudioMarketplaceTabs();
   syncActiveAgentUI();
   autoGrow();
   requestAnimationFrame(syncIOSVisualViewport);
