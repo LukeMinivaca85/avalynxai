@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.3.2-infra-fix";
+const CACHE = "ava-i-shell-v6.4-chat-ux-long";
 const ASSETS = [
   "/",
   "/index.html",

@@ -654,3 +654,10 @@ Fixes errors observed in production:
 - OpenRouter 404s that clearly indicate Ava's own missing proxy route stop the model-fallback loop as infrastructure errors.
 - Proxy responses expose `x-ava-proxy-provider` and `x-ava-proxy-route` diagnostic headers.
 - Service Worker navigation is network-first with a guaranteed cached `/index.html` fallback and never caches `/api/*`.
+
+## v6.4
+- /c/new-chat for new conversations
+- inline rename updates slug URL
+- safer auto titles
+- Markdown formatting inside native tables
+- 65,536-token requested output ceiling plus automatic continuation when finish_reason is length (subject to provider/model hard limits)

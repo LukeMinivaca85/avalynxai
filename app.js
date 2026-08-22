@@ -1119,6 +1119,7 @@ function contentWithoutPendingWidgets(text) {
   return value.trimEnd();
 }
 function widgetTitle(el,title){ if(!title)return; const h=document.createElement("div"); h.className="ava-widget-title"; h.textContent=title; el.appendChild(h); }
+function renderInlineMarkdown(text){let s=escapeHtml(String(text??""));return s.replace(/\\*\\*(.*?)\\*\\*/g,"<strong>$1</strong>").replace(/__([^_]+)__/g,"<strong>$1</strong>").replace(/`([^`\\n]+)`/g,'<code class="inline-code">$1</code>');}
 function renderWidget(w){
   const card=document.createElement("section"); card.className=`ava-widget ava-widget-${w.type}`; widgetTitle(card,w.title);
   if(w.type==="callout"){ card.classList.add(`tone-${w.tone}`); const p=document.createElement("div"); p.className="ava-widget-callout-text"; p.textContent=w.text; card.appendChild(p); }
@@ -1134,7 +1135,7 @@ function renderWidget(w){
     const table=document.createElement("table");table.className="ava-table";
     const thead=document.createElement("thead");const hr=document.createElement("tr");
     for(const c of w.columns){
-      const th=document.createElement("th");th.scope="col";th.textContent=c;hr.appendChild(th);
+      const th=document.createElement("th");th.scope="col";th.innerHTML=renderInlineMarkdown(c);hr.appendChild(th);
     }
     thead.appendChild(hr);
     const tbody=document.createElement("tbody");
@@ -1142,7 +1143,7 @@ function renderWidget(w){
       const tr=document.createElement("tr");
       w.columns.forEach((column,i)=>{
         const td=document.createElement("td");
-        td.textContent=row[i] ?? "";
+        td.innerHTML=renderInlineMarkdown(row[i] ?? "");
         td.dataset.label=column || "";
         tr.appendChild(td);
       });
@@ -1662,7 +1663,7 @@ function updateChatSlugFromTitle(chat, { force = false } = {}) {
   const next = uniqueChatSlug(chat.title || "novo-chat", chat.id);
 
   // Preserve existing URL unless explicitly updating after a rename.
-  if (force || !chat.slug || chat.slug === "novo-chat") {
+  if (force || !chat.slug || chat.slug === "new-chat") {
     chat.slug = next;
   }
 
@@ -1721,11 +1722,12 @@ function makeChat() {
     agentId: state.activeAgentId || null,
     mode: state.appMode
   };
-  chat.slug = uniqueChatSlug(chat.title, chat.id);
+  chat.slug = "new-chat";
   state.chats.unshift(chat);
   state.activeId = chat.id;
   persist();
   renderAll();
+  syncChatURL(chat, { replace: false });
   return chat;
 }
 
@@ -1739,6 +1741,24 @@ function renderAll() {
   syncActiveAgentUI();
 }
 
+function renameChat(chat, nextTitle) {
+  const title=String(nextTitle||"").replace(/\\s+/g," ").trim().slice(0,80);
+  if(!chat||!title)return false;
+  chat.title=title; chat.autoRenamed=true; chat.autoRenameQuality="manual";
+  updateChatSlugFromTitle(chat,{force:true}); persist();
+  if(chat.id===state.activeId)syncChatURL(chat,{replace:true});
+  renderChatList(); return true;
+}
+function beginInlineChatRename(chat,row){
+  const button=row.querySelector(".chat-item-title"); if(!button)return;
+  const input=document.createElement("input"); input.className="chat-rename-input";
+  input.value=chat.title||""; input.maxLength=80; input.setAttribute("aria-label","Renomear conversa");
+  button.replaceWith(input); input.focus(); input.select(); let done=false;
+  const finish=save=>{if(done)return;done=true;if(save&&renameChat(chat,input.value))return;renderChatList();};
+  input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();finish(true)}else if(e.key==="Escape"){e.preventDefault();finish(false)}};
+  input.onblur=()=>finish(true);
+}
+
 function renderChatList() {
   els.chatList.innerHTML = "";
   state.chats.forEach(chat => {
@@ -1749,6 +1769,7 @@ function renderChatList() {
         ${chatAgent ? `<span class="chat-agent-symbol">${escapeHtml(chatAgent.symbol || "A")}</span>` : ""}
         <span>${escapeHtml(chat.title)}</span>
       </button>
+      <button class="chat-rename" aria-label="Renomear conversa" title="Renomear">•••</button>
       <button class="chat-delete" aria-label="Excluir conversa">×</button>`;
     row.querySelector(".chat-item-title").onclick = () => {
       state.activeId = chat.id;
@@ -1756,6 +1777,8 @@ function renderChatList() {
       renderAll();
       closeSidebar();
     };
+    row.querySelector(".chat-rename").onclick = (e) => { e.stopPropagation(); beginInlineChatRename(chat,row); };
+    row.querySelector(".chat-item-title").ondblclick = (e) => { e.preventDefault(); e.stopPropagation(); beginInlineChatRename(chat,row); };
     row.querySelector(".chat-delete").onclick = (e) => {
       e.stopPropagation();
       state.chats = state.chats.filter(c => c.id !== chat.id);
@@ -2227,12 +2250,8 @@ function scrollToBottom(smooth = true) {
 }
 
 function cleanGeneratedTitle(text) {
-  const cleaned = String(text || "")
-    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
-    .replace(/^t[ií]tulo\s*:\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60);
+  const cleaned=String(text||"").replace(/^["'“”‘’`]+|["'“”‘’`]+$/g,"").replace(/^t[ií]tulo\s*:\s*/i,"").replace(/[#*_`>|]/g,"").replace(/\s+/g," ").trim().slice(0,60);
+  if(/^(we need|the user|user wants|here'?s a thinking|thinking process|analysis|assistant|system|developer|okay|i need|we should|o usu[aá]rio quer|racioc[ií]nio)/i.test(cleaned))return "";
   return capitalizeFirstLetter(cleaned);
 }
 
@@ -2243,14 +2262,7 @@ function localAutoTitle(chat) {
     .map(m => String(m.content || "").replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-  const assistant = chat.messages.find(m => m.role === "assistant");
-  const assistantText = String(assistant?.content || "")
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[#*_`>|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const source = `${userMessages.join(" ")} ${assistantText}`.trim();
+  const source = userMessages.join(" ").trim();
   if (!source) return "Conversa com a Ava";
 
   const stop = new Set([
@@ -2339,7 +2351,7 @@ Regras obrigatórias:
 - sem aspas;
 - sem ponto final;
 - primeira letra maiúscula;
-- responda SOMENTE com o título.
+- nunca exponha raciocínio ou metatexto como "The user wants", "We need" ou "Thinking process";\n- responda SOMENTE com o título.
 
 Conversa:
 ${conversation}`
@@ -4315,7 +4327,7 @@ ENGINEERING
           const requestBody={
             model,
             messages,
-            max_tokens:8192,
+            max_tokens:65536,
             temperature:0.15
           };
 
@@ -4404,7 +4416,7 @@ ENGINEERING
               content:`A real matching tool exists: ${preferredTool}. Call it now. Do not give manual instructions and do not claim lack of access.`
             }
           ],
-          max_tokens:4096,
+          max_tokens:65536,
           temperature:0.05,
           tools:openAiTools,
           tool_choice:{
@@ -4489,6 +4501,13 @@ ENGINEERING
   }
 }
 
+async function continueLongResponse(chat,msg,model,ctx,signal){
+  for(let i=0;i<6&&msg.finishReason==="length";i++){
+    const r=await fetch("/api/openrouter/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[...toApiMessages(chat,ctx).slice(0,-1),{role:"assistant",content:msg.content},{role:"user",content:"Continue exatamente de onde parou, sem repetir. Termine a resposta completa."}],stream:false,max_tokens:65536}),signal});
+    if(!r.ok)break;const d=await r.json().catch(()=>({})),c=d?.choices?.[0],extra=c?.message?.content||"";if(!extra)break;msg.content+=extra;msg.finishReason=c?.finish_reason||null;persist();
+  }
+}
+
 async function generateAssistant(chat, requestContext = null) {
   state.generating = true;
   state.controller = new AbortController();
@@ -4525,7 +4544,7 @@ async function generateAssistant(chat, requestContext = null) {
         model: candidateModel,
         messages: toApiMessages(chat, requestContext).slice(0, -1),
         stream: true,
-        max_tokens: 8192
+        max_tokens: 65536
       };
 
       const lastUserMessage = [...chat.messages].reverse().find(m => m.role === "user");
@@ -4652,6 +4671,7 @@ async function generateAssistant(chat, requestContext = null) {
             assistantMsg.webSearchRequests = data.usage.server_tool_use.web_search_requests;
           }
           const choice = data.choices?.[0] || {};
+          if(choice.finish_reason) assistantMsg.finishReason=choice.finish_reason;
           const deltaObj = choice.delta || {};
           const annotations = deltaObj.annotations || choice.message?.annotations;
           if (annotations) {
@@ -4670,6 +4690,7 @@ async function generateAssistant(chat, requestContext = null) {
     }
 
     if (!assistantMsg.content) assistantMsg.content = "A resposta terminou sem conteúdo de texto.";
+    if(assistantMsg.finishReason==="length")await continueLongResponse(chat,assistantMsg,selectedModel,requestContext,state.controller.signal);
   } catch (err) {
     if (err.name === "AbortError") {
       if (!assistantMsg.content) assistantMsg.content = "Geração interrompida.";
@@ -4680,7 +4701,7 @@ A OpenRouter recusou esta geração porque a chave atual não possui créditos s
 
 **O que fazer:** adicione créditos à sua conta OpenRouter ou escolha um modelo mais econômico nas configurações.
 
-Ava I já limita cada resposta a **8.192 tokens** para evitar solicitar uma saída enorme sem necessidade.`;
+Ava I usa um teto alto de saída e continua automaticamente quando o modelo encerra por limite de comprimento. O limite físico final ainda depende do modelo/provedor.`;
     } else if (err.status === 401) {
       assistantMsg.content = `## Chave OpenRouter inválida
 
