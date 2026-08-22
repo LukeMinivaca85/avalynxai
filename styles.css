@@ -2569,3 +2569,20 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 .filter-pills{overflow-x:auto;scrollbar-width:none}
 .filter-pills::-webkit-scrollbar{display:none}
 .model-card .cap-chip{text-transform:capitalize}
+
+/* v6.8 media generation cards */
+.ava-media-card{margin:14px 0;border:1px solid var(--border);border-radius:22px;overflow:hidden;background:var(--panel);box-shadow:0 14px 40px rgba(0,0,0,.12)}
+.ava-media-card-head,.ava-media-card-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px}
+.ava-media-card-head>div,.ava-media-meta{display:grid;gap:2px;min-width:0}
+.ava-media-card-head strong,.ava-media-meta strong{font-size:12px}.ava-media-card-head span,.ava-media-meta span,.ava-media-card-head small{font-size:10px;color:var(--muted)}
+.ava-media-stage{min-height:240px;background:linear-gradient(135deg,rgba(127,127,127,.08),rgba(127,127,127,.03));display:grid;place-items:center;overflow:hidden}
+.ava-media-stage>img,.ava-media-stage>video{display:block;width:100%;max-height:560px;object-fit:contain;background:#000}
+.ava-media-generating-pattern{width:100%;height:320px;display:grid;place-items:center;align-content:center;gap:16px;background-image:radial-gradient(circle,rgba(127,127,127,.28) 1px,transparent 1.2px);background-size:14px 14px}
+.ava-media-orbit{width:110px;height:110px;border-radius:50%;border:1px solid rgba(127,127,127,.25);position:relative;animation:avaSpin 2.2s linear infinite}
+.ava-media-orbit:before,.ava-media-orbit:after{content:"";position:absolute;border-radius:50%;border:1px solid rgba(127,127,127,.45)}
+.ava-media-orbit:before{inset:14px}.ava-media-orbit:after{inset:30px}
+@keyframes avaSpin{to{transform:rotate(360deg)}}
+.ava-media-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.ava-media-action{border:1px solid var(--border);background:var(--soft);color:var(--text);border-radius:10px;padding:7px 10px;font-size:10px;text-decoration:none;cursor:pointer}.ava-media-action.primary{background:var(--text);color:var(--bg)}
+.ava-music-widget{width:100%;padding:28px 22px;display:grid;grid-template-columns:70px 1fr;grid-template-rows:auto auto;gap:18px;align-items:center}
+.ava-music-art{width:70px;height:70px;border-radius:18px;background:var(--soft);display:grid;place-items:center;font-size:28px}.ava-waveform{height:76px;display:flex;align-items:center;gap:3px}.ava-waveform i{display:block;flex:1;height:var(--h);min-width:2px;border-radius:999px;background:currentColor;opacity:.55}.ava-music-widget audio{grid-column:1/-1;width:100%}
+.ava-media-empty{padding:60px 20px;color:var(--muted);text-align:center}

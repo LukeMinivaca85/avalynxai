@@ -4,6 +4,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/code/:path*",
+      "destination": "/api/code?path=:path*"
+    },
+    {
       "source": "/api/models",
       "destination": "/api/router?route=/api/models"
     },

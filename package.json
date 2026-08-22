@@ -1,17 +1,19 @@
 {
   "name": "ava-i",
-  "version": "6.7.0",
+  "version": "6.8.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build-static.mjs",
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs && node --check server/modules/mcp-registry.mjs && node --check api/mcp.mjs && node --check server/modules/artifact-sandbox.mjs && node --check server/modules/model-router.mjs && node --check api/router.mjs",
+    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs && node --check server/modules/mcp-registry.mjs && node --check api/mcp.mjs && node --check server/modules/artifact-sandbox.mjs && node --check server/modules/model-router.mjs && node --check api/router.mjs && node --check server/modules/code-engine.mjs && node --check api/code.mjs",
     "render:build": "npm install && npm run check && npm run build"
   },
   "engines": {
     "node": "22.x"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@openai/codex": "latest"
+  }
 }

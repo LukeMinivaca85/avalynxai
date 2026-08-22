@@ -751,12 +751,22 @@ function bestModelForCapability(capability, preferred = "") {
     const exact=state.modelCatalog.find(m=>m.id===preferred&&modelCapabilities(m).includes(capability)&&m.available!==false);
     if (exact) return exact.id;
   }
+
+  const available=modelsForCapability(capability);
+
+  // Media: prioritize Google AI Studio first when configured.
+  if (["image","video","music","audio"].includes(capability)) {
+    const googlePreferred=available.find(m=>m.provider==="google");
+    if (googlePreferred) return googlePreferred.id;
+  }
+
   if (capability === "chat" || capability === "code") {
     const nvidia=state.modelCatalog.find(m=>m.id==="nvidia/nemotron-3-ultra-550b-a55b"&&modelCapabilities(m).includes("chat"));
     if (nvidia) return nvidia.id;
   }
-  const free=modelsForCapability(capability).find(isFreeModel);
-  return free?.id || modelsForCapability(capability)[0]?.id || "";
+
+  const free=available.find(isFreeModel);
+  return free?.id || available[0]?.id || "";
 }
 function bestToolChatModel(preferred = "") {
   const candidates=state.modelCatalog.filter(m=>m.available!==false&&modelCapabilities(m).includes("chat")&&modelCapabilities(m).includes("tools"));
@@ -1234,23 +1244,155 @@ function renderWidget(w){
 function openImageLightbox(src,alt=""){ if(!els.imageLightbox)return; els.imageLightboxImg.src=src; els.imageLightboxImg.alt=alt; if(!els.imageLightbox.open)els.imageLightbox.showModal(); }
 function modelSupportsMultipleImages(model){ const p=model?.supported_parameters; if(Array.isArray(p))return p.includes("n"); if(p&&typeof p==="object")return Object.prototype.hasOwnProperty.call(p,"n"); return false; }
 
+
+function mediaProviderLabel(modelId=""){
+  const model=state.modelCatalog.find(m=>m.id===modelId);
+  if(model?.provider==="google") return "Google AI Studio";
+  if(model?.provider==="huggingface") return "Hugging Face";
+  if(model?.provider==="replicate") return "Replicate";
+  if(model?.provider==="fal") return "fal.ai";
+  return model?.provider || "Avalynx";
+}
+
+function renderMediaGenerationCard(msg){
+  const widget=msg.mediaWidget;
+  if(!widget)return null;
+
+  const card=document.createElement("section");
+  card.className=`ava-media-card ${widget.kind||"media"} ${widget.status||"generating"}`;
+
+  const head=document.createElement("div");
+  head.className="ava-media-card-head";
+  head.innerHTML=`<div><strong>${widget.kind==="image"?"Imagem":widget.kind==="video"?"Vídeo":"Música"}</strong><span>${escapeHtml(widget.status==="generating"?"Gerando agora":widget.status==="error"?"Falhou":"Gerado")}</span></div><small>${escapeHtml(widget.provider||"Google AI Studio")}</small>`;
+  card.appendChild(head);
+
+  const stage=document.createElement("div");
+  stage.className="ava-media-stage";
+
+  if(widget.status==="generating"){
+    stage.innerHTML=`<div class="ava-media-generating-pattern"><div class="ava-media-orbit"></div><span>${widget.kind==="image"?"Criando imagem":widget.kind==="video"?"Renderizando vídeo":"Compondo música"}</span></div>`;
+  }else if(widget.kind==="image" && Array.isArray(msg.images) && msg.images.length){
+    const img=document.createElement("img");
+    img.src=msg.images[0].src;
+    img.alt=msg.images[0].alt||"Imagem gerada";
+    img.loading="lazy";
+    img.onclick=()=>openImageLightbox(img.src,img.alt);
+    stage.appendChild(img);
+  }else if(widget.kind==="video" && Array.isArray(msg.media) && msg.media.length){
+    const video=document.createElement("video");
+    video.src=msg.media[0].src;
+    video.controls=true;
+    video.playsInline=true;
+    video.preload="metadata";
+    stage.appendChild(video);
+  }else if(widget.kind==="music" && Array.isArray(msg.media) && msg.media.length){
+    const music=document.createElement("div");
+    music.className="ava-music-widget";
+    music.innerHTML=`<div class="ava-music-art"><span>♫</span></div><div class="ava-waveform">${Array.from({length:48},(_,i)=>`<i style="--h:${20+((i*17)%65)}%"></i>`).join("")}</div>`;
+    const audio=document.createElement("audio");
+    audio.src=msg.media[0].src;
+    audio.controls=true;
+    audio.preload="metadata";
+    music.appendChild(audio);
+    stage.appendChild(music);
+  }else{
+    stage.innerHTML=`<div class="ava-media-empty">${escapeHtml(widget.status==="error"?"A geração não foi concluída.":"Nenhuma mídia retornada.")}</div>`;
+  }
+
+  card.appendChild(stage);
+
+  const foot=document.createElement("div");
+  foot.className="ava-media-card-foot";
+  const model=state.modelCatalog.find(m=>m.id===widget.model);
+  const label=model?.name||widget.model||"Modelo";
+  foot.innerHTML=`<div class="ava-media-meta"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(widget.provider||mediaProviderLabel(widget.model))}</span></div><div class="ava-media-actions"></div>`;
+
+  const actions=foot.querySelector(".ava-media-actions");
+  const firstUrl=widget.kind==="image"?msg.images?.[0]?.src:msg.media?.[0]?.src;
+
+  if(firstUrl && widget.status==="completed"){
+    const open=document.createElement("button");
+    open.type="button";open.className="ava-media-action";open.textContent="Abrir";
+    open.onclick=()=>widget.kind==="image"?openImageLightbox(firstUrl,"Imagem gerada"):window.open(firstUrl,"_blank","noopener,noreferrer");
+    actions.appendChild(open);
+
+    const download=document.createElement("a");
+    download.className="ava-media-action";
+    download.href=firstUrl;
+    download.download=widget.kind==="image"?"ava-image.png":widget.kind==="video"?"ava-video.mp4":"ava-music.mp3";
+    download.textContent="Baixar";
+    download.setAttribute("data-ava-safe-link","1");
+    actions.appendChild(download);
+  }
+
+  if(widget.kind==="image" && widget.status==="completed"){
+    const edit=document.createElement("button");
+    edit.type="button";edit.className="ava-media-action primary";edit.textContent="Editar";
+    edit.onclick=()=>{
+      state.imageModeActive=true;
+      state.mediaModeActive=false;
+      els.prompt.value=`Edite a imagem anterior: `;
+      autoGrow();
+      els.prompt.focus();
+      updateToolUI();
+    };
+    actions.appendChild(edit);
+  }
+
+  card.appendChild(foot);
+  return card;
+}
+
 function renderMessageExtras(node, msg) {
   const body=node.querySelector(".message-body");
-  body.querySelector(".ava-widgets")?.remove(); body.querySelector(".generated-images")?.remove(); body.querySelector(".message-sources")?.remove();
-  if(Array.isArray(msg.widgets)&&msg.widgets.length){const wrap=document.createElement("div");wrap.className="ava-widgets";for(const w of msg.widgets.slice(0,3)){const n=normalizeWidget(w);if(n)wrap.appendChild(renderWidget(n));}if(wrap.children.length)body.insertBefore(wrap,node.querySelector(".message-actions"));}
-  if(Array.isArray(msg.images)&&msg.images.length){const wrap=document.createElement("div");const count=Math.min(4,msg.images.length);wrap.className=`generated-images image-group count-${count}`;wrap.setAttribute("aria-label",`${msg.images.length} imagem${msg.images.length===1?"":"s"}`);msg.images.slice(0,4).forEach((image,index)=>{const b=document.createElement("button");b.type="button";b.className="generated-image-link";b.setAttribute("aria-label",`Abrir imagem ${index+1}`);const img=document.createElement("img");img.src=image.src;img.alt=image.alt||`Imagem gerada ${index+1}`;img.loading="lazy";b.appendChild(img);b.onclick=()=>openImageLightbox(image.src,img.alt);wrap.appendChild(b);});body.insertBefore(wrap,node.querySelector(".message-actions"));}
-  if(Array.isArray(msg.media)&&msg.media.length){
-    const wrap=document.createElement("div");wrap.className="generated-media";
-    msg.media.slice(0,4).forEach(item=>{
-      if(item.type==="video"){
-        const v=document.createElement("video");v.src=item.src;v.controls=true;v.playsInline=true;v.preload="metadata";wrap.appendChild(v);
-      }else{
-        const a=document.createElement("audio");a.src=item.src;a.controls=true;a.preload="metadata";wrap.appendChild(a);
-      }
-    });
-    body.insertBefore(wrap,node.querySelector(".message-actions"));
+  body.querySelector(".ava-widgets")?.remove();
+  body.querySelector(".generated-images")?.remove();
+  body.querySelector(".generated-media")?.remove();
+  body.querySelector(".ava-media-card")?.remove();
+  body.querySelector(".message-sources")?.remove();
+
+  if(Array.isArray(msg.widgets)&&msg.widgets.length){
+    const wrap=document.createElement("div");wrap.className="ava-widgets";
+    for(const w of msg.widgets.slice(0,3)){const n=normalizeWidget(w);if(n)wrap.appendChild(renderWidget(n));}
+    if(wrap.children.length)body.insertBefore(wrap,node.querySelector(".message-actions"));
   }
-  if(Array.isArray(msg.annotations)&&msg.annotations.length){const sources=document.createElement("div");sources.className="message-sources";const title=document.createElement("div");title.className="sources-title";title.textContent="Fontes";sources.appendChild(title);const list=document.createElement("div");list.className="source-chips";msg.annotations.slice(0,8).forEach((source,index)=>{const a=document.createElement("a");a.className="source-chip";a.href=source.url;a.target="_blank";a.rel="noopener noreferrer";a.title=source.url;a.textContent=`${index+1} · ${source.title||"Fonte"}`;list.appendChild(a);});sources.appendChild(list);body.insertBefore(sources,node.querySelector(".message-actions"));}
+
+  if(msg.mediaWidget){
+    const card=renderMediaGenerationCard(msg);
+    if(card)body.insertBefore(card,node.querySelector(".message-actions"));
+  }else{
+    if(Array.isArray(msg.images)&&msg.images.length){
+      const wrap=document.createElement("div");const count=Math.min(4,msg.images.length);
+      wrap.className=`generated-images image-group count-${count}`;
+      msg.images.slice(0,4).forEach((image,index)=>{
+        const b=document.createElement("button");b.type="button";b.className="generated-image-link";
+        const img=document.createElement("img");img.src=image.src;img.alt=image.alt||`Imagem gerada ${index+1}`;img.loading="lazy";
+        b.appendChild(img);b.onclick=()=>openImageLightbox(image.src,img.alt);wrap.appendChild(b);
+      });
+      body.insertBefore(wrap,node.querySelector(".message-actions"));
+    }
+    if(Array.isArray(msg.media)&&msg.media.length){
+      const wrap=document.createElement("div");wrap.className="generated-media";
+      msg.media.slice(0,4).forEach(item=>{
+        if(item.type==="video"){
+          const v=document.createElement("video");v.src=item.src;v.controls=true;v.playsInline=true;v.preload="metadata";wrap.appendChild(v);
+        }else{
+          const a=document.createElement("audio");a.src=item.src;a.controls=true;a.preload="metadata";wrap.appendChild(a);
+        }
+      });
+      body.insertBefore(wrap,node.querySelector(".message-actions"));
+    }
+  }
+
+  if(Array.isArray(msg.annotations)&&msg.annotations.length){
+    const sources=document.createElement("div");sources.className="message-sources";
+    const title=document.createElement("div");title.className="sources-title";title.textContent="Fontes";sources.appendChild(title);
+    const list=document.createElement("div");list.className="source-chips";
+    msg.annotations.slice(0,8).forEach((source,index)=>{
+      const a=document.createElement("a");a.className="source-chip";a.href=source.url;a.target="_blank";a.rel="noopener noreferrer";a.title=source.url;a.textContent=`${index+1} · ${source.title||"Fonte"}`;list.appendChild(a);
+    });
+    sources.appendChild(list);body.insertBefore(sources,node.querySelector(".message-actions"));
+  }
 }
 async function loadImageModels(force = false) {
   if (!state.modelCatalog.length || force) await loadModelCatalog(force);
@@ -1260,12 +1402,13 @@ async function loadImageModels(force = false) {
     .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.id)} · ${escapeHtml(modelProvider(m))}</option>`)
     .join("");
 
-  if (!state.imageModel || !state.imageModels.some(m => m.id === state.imageModel)) {
-    state.imageModel = bestModelForCapability("image");
+  const preferredImage = bestModelForCapability("image");
+  if (!state.imageModel || !state.imageModels.some(m => m.id === state.imageModel) || state.modelCatalog.find(m=>m.id===state.imageModel)?.provider!=="google") {
+    state.imageModel = preferredImage;
   }
   els.imageModelSelect.value = state.imageModel || "";
   els.imageStudioStatus.textContent = state.imageModels.length
-    ? `${state.imageModels.length} modelos de imagem no Avalynx Model Router.`
+    ? `${state.imageModels.length} modelos de imagem no Avalynx Model Router · Google AI Studio priorizado.`
     : "Nenhum provider conectado anunciou modelos de imagem.";
   persist();
   return state.imageModels;
@@ -1304,6 +1447,7 @@ async function generateImageResponse(chat, promptText) {
     role: "assistant",
     content: "Criando imagem…",
     images: [],
+    mediaWidget: {kind:"image",status:"generating",model:state.imageModel,provider:mediaProviderLabel(state.imageModel)},
     createdAt: Date.now()
   };
   chat.messages.push(assistantMsg);
@@ -1312,6 +1456,7 @@ async function generateImageResponse(chat, promptText) {
   els.empty.classList.add("hidden");
   const node = appendMessageElement(assistantMsg, true);
   const contentNode = node.querySelector(".message-content");
+  renderMessageExtras(node,assistantMsg);
   scrollToBottom();
 
   try {
@@ -1361,12 +1506,14 @@ async function generateImageResponse(chat, promptText) {
     }).filter(Boolean);
 
     assistantMsg.images = images;
+    assistantMsg.mediaWidget.status = images.length ? "completed" : "error";
     assistantMsg.content = images.length
       ? `${images.length === 1 ? "Imagem gerada" : `Grupo com ${images.length} imagens gerado`} com ${state.imageModels.find(m => m.id === state.imageModel)?.name || state.imageModel}.`
       : "A geração terminou, mas a API não retornou uma imagem utilizável.";
 
     
   } catch (err) {
+    if(assistantMsg.mediaWidget) assistantMsg.mediaWidget.status="error";
     if (err.name === "AbortError") {
       assistantMsg.content = "Geração de imagem interrompida.";
     } else if (err.status === 402) {
@@ -1396,10 +1543,14 @@ async function openMediaStudio(capability) {
   const models=modelsForCapability(capability);
   els.mediaStudioTitle.textContent = capability === "video" ? "Criar vídeo" : "Criar música";
   els.mediaModelSelect.innerHTML=models.map(m=>`<option value="${escapeHtml(m.id)}">${escapeHtml(m.name||m.id)} · ${escapeHtml(modelProvider(m))}</option>`).join("");
-  state.mediaModel = models.some(m=>m.id===state.mediaModel) ? state.mediaModel : bestModelForCapability(capability);
+  const preferredMedia = bestModelForCapability(capability);
+  const currentMedia = state.modelCatalog.find(m=>m.id===state.mediaModel);
+  state.mediaModel = currentMedia?.provider==="google" && models.some(m=>m.id===state.mediaModel)
+    ? state.mediaModel
+    : preferredMedia;
   els.mediaModelSelect.value=state.mediaModel||"";
   els.mediaStudioStatus.textContent=models.length
-    ? `${models.length} modelos de ${capability === "video" ? "vídeo" : "música"} no Avalynx Model Router.`
+    ? `${models.length} modelos de ${capability === "video" ? "vídeo" : "música"} no Avalynx Model Router · Google AI Studio priorizado.`
     : `Nenhum provider conectado anunciou modelos de ${capability === "video" ? "vídeo" : "música"}.`;
   if(!els.mediaStudio.open)els.mediaStudio.showModal();
 }
@@ -1413,12 +1564,15 @@ async function generateMediaResponse(chat,promptText,capability,modelId){
   const assistantMsg={
     id:uid(),role:"assistant",
     content:capability==="video"?"Criando vídeo…":"Criando música…",
-    media:[],createdAt:Date.now()
+    media:[],
+    mediaWidget:{kind:capability==="video"?"video":"music",status:"generating",model:modelId,provider:mediaProviderLabel(modelId)},
+    createdAt:Date.now()
   };
   chat.messages.push(assistantMsg);persist();
   els.empty.classList.add("hidden");
   const node=appendMessageElement(assistantMsg,true);
   const contentNode=node.querySelector(".message-content");
+  renderMessageExtras(node,assistantMsg);
   scrollToBottom();
 
   try{
@@ -1434,16 +1588,19 @@ async function generateMediaResponse(chat,promptText,capability,modelId){
       type:capability==="video"?"video":"audio",
       alt:`${capability==="video"?"Vídeo":"Música"} gerad${capability==="video"?"o":"a"} ${i+1}`
     })).filter(x=>x.src);
+    assistantMsg.mediaWidget.status=assistantMsg.media.length?"completed":"error";
     assistantMsg.content=assistantMsg.media.length
       ? `${capability==="video"?"Vídeo":"Música"} gerad${capability==="video"?"o":"a"} com ${state.modelCatalog.find(m=>m.id===modelId)?.name||modelId}.`
       : `A geração terminou, mas o provider não retornou uma URL de ${capability==="video"?"vídeo":"áudio"}.`;
   }catch(err){
+    if(assistantMsg.mediaWidget) assistantMsg.mediaWidget.status="error";
     assistantMsg.content=err.name==="AbortError"
       ? "Geração interrompida."
       : `Não consegui gerar ${capability==="video"?"o vídeo":"a música"}.\n\n\`${String(err.message||err)}\``;
   }finally{
     state.generating=false;state.controller=null;els.sendIcon.textContent="↑";els.send.title="Enviar";
-    contentNode.classList.remove("typing-cursor");contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    contentNode.classList.remove("typing-cursor");assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
+    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     finalizeRichMessage(node);renderMessageExtras(node,assistantMsg);wireSafeLinks(node);
     persist();renderChatList();autoRenameChat(chat).catch(console.warn);
   }
@@ -2204,7 +2361,16 @@ function wireCodeCopy(scope) {
   });
 }
 
+
+function cleanSvgTextArtifacts(text) {
+  return String(text ?? "")
+    .replace(/(?:\bsvg\b\s*){2,}/gi, "")
+    .replace(/(?:svg){2,}/gi, "")
+    .replace(/^\s*svg\s*$/gim, "");
+}
+
 function renderMarkdown(text) {
+  text = cleanSvgTextArtifacts(text);
   text = String(text || "").replace(/(?:\bsvg\b\s*){2,}/gi, "");
   let source = String(text || "");
   const blocks = [];
@@ -3935,7 +4101,7 @@ async function sendCurrent() {
     await generateMediaResponse(chat, mediaPrompt, capability, modelId);
   } else if ((chat.mode || state.appMode) === "code") {
     clearAcceptedAttachments();
-    await generateAvaCode(chat, { messageId: userMsg.id, currentApiContent: apiContent });
+    await generateAvaCode(chat, { messageId: userMsg.id, currentApiContent: apiContent, rawFiles: selectedFiles });
   } else {
     await generateAssistant(chat, {
       messageId: userMsg.id,
@@ -4571,6 +4737,110 @@ function textWronglyClaimsNoAccess(text) {
 }
 
 
+
+function avaCodePreferredModel() {
+  const available=state.modelCatalog.filter(m=>m.available!==false);
+  return (
+    available.find(m=>m.provider==="huggingface"&&/qwen3-coder-480b-a35b-instruct/i.test(m.id)) ||
+    available.find(m=>m.provider==="huggingface"&&/qwen.*coder|coder.*qwen/i.test(m.id)) ||
+    available.find(m=>m.provider==="huggingface"&&modelCapabilities(m).includes("code")) ||
+    available.find(m=>modelCapabilities(m).includes("code")) ||
+    null
+  );
+}
+
+
+function shouldUseCodexEngine(text, requestContext=null) {
+  const value=String(text||"").toLowerCase();
+  const editIntent=/\b(edite|editar|modifique|modificar|corrija|corrigir|implemente|implementar|refatore|refatorar|crie o arquivo|criar arquivo|delete|remova|rename|renomeie|fix|change|modify|implement|refactor|create file|edit file)\b/i.test(value);
+  return editIntent || (Array.isArray(requestContext?.rawFiles) && requestContext.rawFiles.length>0);
+}
+
+async function codexWorkspaceFiles(rawFiles=[]) {
+  const allowed=/\.(?:txt|md|json|js|mjs|cjs|ts|tsx|jsx|css|html|xml|yaml|yml|toml|ini|csv|sql|py|java|kt|swift|go|rs|c|h|cpp|hpp|sh|ps1|rb|php|vue|svelte)$/i;
+  const files=[];
+  for(const file of Array.from(rawFiles||[]).slice(0,64)){
+    if(!file?.name || file.size>1024*1024 || !allowed.test(file.name))continue;
+    try{
+      files.push({path:file.name,content:await file.text()});
+    }catch{}
+  }
+  return files;
+}
+
+async function publishCodexFiles(files=[]) {
+  const published=[];
+  for(const file of files.slice(0,32)){
+    if(file?.deleted)continue;
+    try{
+      const res=await fetch("/api/artifacts/create",{
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({name:file.path,content:file.content||""})
+      });
+      const data=await res.json().catch(()=>({}));
+      if(res.ok && data.downloadUrl) published.push({path:file.path,url:data.downloadUrl});
+    }catch{}
+  }
+  return published;
+}
+
+async function runCodexCliEngine(userText,requestContext,node){
+  if(!shouldUseCodexEngine(userText,requestContext))return null;
+
+  const status=await fetch("/api/code/status").then(r=>r.json()).catch(()=>({available:false}));
+  if(!status?.available)return null;
+
+  const files=await codexWorkspaceFiles(requestContext?.rawFiles||[]);
+  const step=codeActivity(node,"Codex CLI · preparando workspace…");
+
+  const instruction=`You are the file-editing engine for Ava Code.
+Work only inside the provided workspace.
+Implement the user's requested code/file changes directly.
+Inspect existing files first when present.
+Run appropriate checks/tests when practical.
+Do not deploy, push, publish, or modify secrets.
+User request:
+${userText}`;
+
+  const res=await fetch("/api/code/run",{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({instruction,files}),
+    signal:state.controller.signal
+  });
+  const data=await res.json().catch(()=>({}));
+
+  if(!res.ok){
+    step.classList.remove("running");
+    step.classList.add("error");
+    step.querySelector("span:last-child").textContent=`Codex CLI · ${data.error||res.status}`;
+    return null;
+  }
+
+  step.classList.remove("running");
+  step.classList.add("done");
+  step.querySelector("span:last-child").textContent=`Codex CLI · ${data.changedFiles?.length||0} arquivo(s) alterado(s)`;
+
+  const downloads=await publishCodexFiles(data.files||[]);
+  const fileList=(data.changedFiles||[]).length
+    ? `\n\n### Arquivos alterados\n${(data.changedFiles||[]).map(f=>`- \`${f}\``).join("\n")}`
+    : "";
+
+  const downloadList=downloads.length
+    ? `\n\n### Downloads\n${downloads.map(d=>`- [Baixar ${d.path}](${d.url})`).join("\n")}`
+    : "";
+
+  return {
+    content:`## Codex CLI concluiu a edição
+
+${data.summary||"Alterações concluídas."}${fileList}${downloadList}`,
+    engine:"codex-cli",
+    changedFiles:data.changedFiles||[],
+    files:data.files||[]
+  };
+}
+
 async function generateAvaCode(chat,requestContext=null){
   state.generating=true;
   state.controller=new AbortController();
@@ -4595,12 +4865,26 @@ async function generateAvaCode(chat,requestContext=null){
   scrollToBottom();
 
   try{
+    const latestUserText=[...chat.messages].reverse().find(m=>m.role==="user")?.content||"";
+    const codexResult=await runCodexCliEngine(latestUserText,requestContext,node);
+    if(codexResult){
+      assistantMsg.content=codexResult.content;
+      assistantMsg.codeEngine=codexResult.engine;
+      assistantMsg.changedFiles=codexResult.changedFiles;
+      thinking.classList.remove("running");
+      thinking.classList.add("done");
+      thinking.querySelector("span:last-child").textContent="Codex CLI finalizado";
+      contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+      finalizeRichMessage(node);
+      persist();
+      return;
+    }
+
     if(!state.modelCatalog.length) await loadModelCatalog(false);
     if(!state.modelCatalog.length) throw new Error("Nenhum provider de modelo está conectado ao Avalynx Model Router.");
 
     const toolData = await fetchMcpTools();
     let mcpTools = toolData.tools || [];
-    const latestUserText=[...chat.messages].reverse().find(m=>m.role==="user")?.content||"";
     const mentioned=mentionedMcpProviders(latestUserText);
     if(mentioned.length)mcpTools=mcpTools.filter(t=>{const p=inferMcpProvider(t);return p&&mentioned.includes(p.id)});
     const openAiTools = [AVA_LOCAL_ARTIFACT_TOOL,...openAiToolsFromMcp(mcpTools)];
@@ -4653,17 +4937,32 @@ ENGINEERING
 - Identify files that should change.
 - Prefer complete, directly usable code and patches.
 - Explain verification steps.
-- The product identity is Ava Code. The inference model is selected dynamically by the Avalynx Model Router from connected providers that support coding/tool workflows.`
+- The product identity is Ava Code.
+Prefer Qwen Coder models served through Hugging Face Inference Providers, especially Qwen/Qwen3-Coder-480B-A35B-Instruct when available.
+Fall back to other Hugging Face tool-capable coding models before using other providers.`
     });
 
-    const toolCapable=state.modelCatalog.filter(m=>m.available!==false&&modelCapabilities(m).includes("chat")&&modelCapabilities(m).includes("tools"));
+    const toolCapable=state.modelCatalog.filter(
+      m=>m.available!==false &&
+         modelCapabilities(m).includes("chat") &&
+         modelCapabilities(m).includes("tools")
+    );
     const codeCapable=toolCapable.filter(m=>modelCapabilities(m).includes("code"));
-    const selectedPreferred=toolCapable.find(m=>m.id===state.model);
+
+    const hfPriority=[
+      "huggingface/Qwen/Qwen3-Coder-480B-A35B-Instruct:fastest",
+      "huggingface/Qwen/Qwen2.5-Coder-32B-Instruct:fastest",
+      "huggingface/openai/gpt-oss-120b:fastest"
+    ];
+
     const candidates=[
-      selectedPreferred?.id,
-      ...codeCapable.map(m=>m.id),
-      ...toolCapable.map(m=>m.id)
-    ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,5);
+      ...hfPriority.filter(id=>toolCapable.some(m=>m.id===id)),
+      ...codeCapable.filter(m=>m.provider==="huggingface").map(m=>m.id),
+      ...codeCapable.filter(m=>m.provider!=="huggingface").map(m=>m.id),
+      ...toolCapable.filter(m=>m.provider==="huggingface").map(m=>m.id),
+      ...toolCapable.filter(m=>m.provider!=="huggingface").map(m=>m.id)
+    ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,8);
+
     let selectedModel=null;
     let finalContent="";
     let lastError=null;
@@ -4673,7 +4972,7 @@ ENGINEERING
       let payload=null;
 
       for(const model of candidates){
-        const modelStep=codeActivity(node,round===0 ? `Conectando a ${model}…` : `Continuando com ${model}…`);
+        const modelStep=codeActivity(node,round===0 ? `Ava Code · conectando a ${model}…` : `Ava Code · continuando com ${model}…`);
 
         try{
           const requestBody={
@@ -4704,12 +5003,15 @@ ENGINEERING
             modelStep.classList.remove("running");
             modelStep.classList.add("error");
 
-            if(response.status === 404 && /unknown api route|cannot post|not found/i.test(errorText)){
+            if(response.status === 404 && /unknown api route|cannot post/i.test(errorText)){
               modelStep.querySelector("span:last-child").textContent="Backend Ava Code sem rota do Avalynx Model Router";
               throw new Error(`Falha de infraestrutura: /api/inference/chat retornou 404 (${errorText}).`);
             }
 
-            modelStep.querySelector("span:last-child").textContent=`${model} indisponível`;
+            modelStep.querySelector("span:last-child").textContent=
+              model.startsWith("huggingface/")
+                ? `Hugging Face · ${model.replace(/^huggingface\//,"")} indisponível`
+                : `${model} indisponível`;
             lastError=new Error(errorText);
             continue;
           }
@@ -4830,6 +5132,7 @@ ENGINEERING
     assistantMsg.content=finalContent;
     assistantMsg.model=selectedModel || "nvidia/nemotron-3-ultra-550b-a55b";
 
+    assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
     finalizeRichMessage(node);
@@ -4838,6 +5141,7 @@ ENGINEERING
     await autoRenameChat(chat).catch(console.warn);
   }catch(e){
     assistantMsg.content=`Ava Code não conseguiu responder: ${String(e.message||e)}`;
+    assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
     thinking.classList.remove("running");
@@ -5070,7 +5374,8 @@ The user explicitly requested live web information. If no live search MCP tool w
       assistantMsg.content=choice?.message?.content||choice?.text||"";
       assistantMsg.finishReason=choice?.finish_reason||null;
       if(choice?.message?.annotations)assistantMsg.annotations=normalizeAnnotations(choice.message.annotations);
-      contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+      assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
+    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
       finalizeRichMessage(node);
     }
 
@@ -5111,6 +5416,7 @@ A credencial do provider foi recusada pelo backend.
     }
 
     extractRichWidgets(assistantMsg);
+    assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     finalizeRichMessage(node);
     renderMessageExtras(node,assistantMsg);

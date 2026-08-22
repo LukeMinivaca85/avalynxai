@@ -84,3 +84,67 @@ generation route through capability-specific backend endpoints.
 The catalog only exposes models discovered from or explicitly configured for providers
 that the deployment can access. A provider's presence in the catalog does not imply
 that its upstream usage is free; billing and quotas remain controlled by that provider.
+
+
+## v6.7.1 — Google AI Studio media priority
+
+Media routing now prioritizes Google AI Studio when `GEMINI_API_KEY` is configured.
+
+Direct Google adapters:
+- Image: `gemini-3.1-flash-image` via `generateContent`
+- Video: `veo-3.1-generate-preview` / `veo-3.1-lite-generate-preview` via `predictLongRunning` + operation polling
+- Music: `lyria-3-pro-preview` / `lyria-3-clip-preview` via Interactions API
+
+Veo file downloads are proxied server-side so the browser never receives the Gemini API key.
+Hugging Face media-only catalog entries are no longer considered executable by default unless an adapter is configured.
+Repeated stray `svgsvgsvg` text artifacts are cleaned from assistant rendering.
+
+
+## v6.7.2 — Ava Code prefers Qwen Coder via Hugging Face
+
+Ava Code now prioritizes Hugging Face Inference Providers for coding/tool workflows.
+
+Priority:
+1. `Qwen/Qwen3-Coder-480B-A35B-Instruct` through Hugging Face when live
+2. other Qwen Coder models through Hugging Face
+3. other Hugging Face code + tool-capable models
+4. other Hugging Face tool-capable chat models
+5. tool-capable coding/chat models from other connected providers
+
+Hugging Face chat inference now uses the official OpenAI-compatible endpoint:
+`https://router.huggingface.co/v1/chat/completions`
+
+This preserves OpenAI-style tool calling and streaming semantics needed by Ava Code + MCP.
+
+
+## v6.7.2 — Ava Code Qwen Coder + Google media execution
+
+Ava Code now prioritizes Hugging Face Inference Providers:
+1. `Qwen/Qwen3-Coder-480B-A35B-Instruct:fastest`
+2. `Qwen/Qwen2.5-Coder-32B-Instruct:fastest`
+3. `openai/gpt-oss-120b:fastest`
+4. other executable coding/tool-capable models
+
+Hugging Face chat/tool calls use the official OpenAI-compatible endpoint:
+`https://router.huggingface.co/v1/chat/completions`
+
+An upstream model 404 no longer gets misclassified as a missing Avalynx backend route; Ava Code can continue to its next coding fallback.
+
+Media routing prioritizes Google AI Studio:
+- Image: `gemini-3.1-flash-image`
+- Video: Veo 3.1 family
+- Music: Lyria 3 Pro / Clip
+
+The Google adapters are real execution adapters rather than catalog-only placeholders.
+Replicate is no longer preferred over an available Google media model.
+Stray repeated `svgsvgsvg` text is removed from assistant rendering.
+
+
+## v6.8 — Codex CLI engine + media widgets
+
+- Ava Code can use Codex CLI as the direct file-editing engine, without MCP in the file-edit path.
+- `/api/code/status` reports engine availability.
+- `/api/code/run` creates an isolated temporary workspace, runs `codex exec --sandbox workspace-write`, captures changed files, and returns downloadable artifacts.
+- Qwen Coder via Hugging Face remains Ava Code's conversational/coding model when the Codex engine is not used or unavailable.
+- Image, video and music generation now render as rich Avalynx media cards with generating state, preview/player, model/provider metadata, open/download actions, and image edit affordance.
+- Google AI Studio remains the first-choice media provider when an applicable Google model is available.
