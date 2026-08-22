@@ -630,3 +630,15 @@ Normal production setup only requires:
 The MCP panel inspects gateway tools and groups them into provider cards such as GitHub, Supabase, Cloudflare, Google Drive, Vercel, Render, Stripe and Sentry.
 
 Direct MCP URLs from v6.2 remain supported as optional additional servers.
+
+
+## v6.3.1 — Ava Code tool-use reliability
+
+Fixes models incorrectly saying they lack GitHub/API access when MCP tools are actually present.
+
+Changes:
+- Strong "tool reality" contract in the Ava Code system prompt.
+- Explicit rule: perform actions with matching tools instead of giving manual instructions.
+- Detection of false "no access" responses.
+- Intent matching for common explicit actions such as GitHub issue creation.
+- Runtime retry with forced `tool_choice` when the model ignores a clearly matching tool.

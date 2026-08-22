@@ -4157,6 +4157,52 @@ function codeActivity(node,text,status="running"){
   if(!wrap){wrap=document.createElement("div");wrap.className="ava-code-activity";node.querySelector(".message-body")?.insertBefore(wrap,node.querySelector(".message-content"));}
   const row=document.createElement("div");row.className="ava-code-step "+status;row.innerHTML=`<span class="ava-code-step-dot"></span><span>${escapeHtml(text)}</span>`;wrap.appendChild(row);return row;
 }
+
+function normalizeToolIntent(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function explicitPreferredTool(userText, tools) {
+  const text = normalizeToolIntent(userText);
+  const names = (tools || []).map(t => t?.function?.name).filter(Boolean);
+
+  const rules = [
+    { rx:/\b(criar|abra|abrir|create|open).*(issue|ticket)\b|\b(issue|ticket)\b.*\b(criar|create|abrir|open)\b/, terms:["github","create","issue"] },
+    { rx:/\b(criar|create).*(pull request|pr)\b|\b(pull request|pr)\b.*\b(criar|create)\b/, terms:["github","create","pull"] },
+    { rx:/\b(criar|create).*(branch|ramo)\b|\b(branch|ramo)\b.*\b(criar|create)\b/, terms:["github","create","branch"] },
+    { rx:/\b(logs?|erros?)\b.*\b(cloudflare|worker)\b|\b(cloudflare|worker).*\b(logs?|erros?)\b/, terms:["cloudflare","log"] },
+    { rx:/\b(tabelas?|schema|sql|banco|database)\b.*\bsupabase\b|\bsupabase\b.*\b(tabelas?|schema|sql|banco|database)\b/, terms:["supabase"] },
+    { rx:/\b(baixar|download|arquivo baixavel|arquivo para baixar|generate file|create file)\b/, terms:["ava","create","artifact"] }
+  ];
+
+  for (const rule of rules) {
+    if (!rule.rx.test(text)) continue;
+    const found = names.find(name => rule.terms.every(term => normalizeToolIntent(name).includes(term)));
+    if (found) return found;
+  }
+  return null;
+}
+
+function textWronglyClaimsNoAccess(text) {
+  const t = normalizeToolIntent(text);
+  return [
+    "nao tenho acesso",
+    "sem acesso direto",
+    "nao posso acessar",
+    "nao tenho integracao",
+    "sem integracao",
+    "rodando localmente",
+    "without access",
+    "no direct access",
+    "cannot access",
+    "do not have access"
+  ].some(fragment => t.includes(fragment));
+}
+
+
 async function generateAvaCode(chat,requestContext=null){
   state.generating=true;
   state.controller=new AbortController();
@@ -4201,27 +4247,45 @@ async function generateAvaCode(chat,requestContext=null){
     const messages=toApiMessages(chat,requestContext).slice(0,-1);
     messages.unshift({
       role:"system",
-      content:`You are the reasoning model inside Ava Code, an agentic coding product by Avalynx.
+      content:`You are Ava Code, an agentic software-engineering product by Avalynx.
 
-You are a software-engineering agent, not a generic chatbot. Understand repositories, inspect evidence, use available MCP tools when they can answer the request more reliably, propose precise changes, and verify work.
+You are NOT a generic chatbot. You are an engineering agent with real external tools supplied dynamically by the runtime.
 
-Important tool rules:
-- MCP tools are real external actions.\n- Respect explicit @provider mentions and prefer only those MCP tools.\n- When the user asks for a downloadable file, use ava__create_artifact; do not pretend a Markdown block is a file.
+TOOL REALITY CONTRACT
+- If tools are present in the current request, those tools are REAL and AVAILABLE to you.
+- NEVER say "I do not have access", "I cannot access GitHub", "I have no API integration", "I am running locally without credentials", or similar claims when a matching tool is present.
+- Only say an integration is unavailable when the required tool is genuinely absent OR a real tool execution returns an error.
+- Do not confuse the underlying language model with the Ava Code product. Even if the base model itself has no native integrations, Ava Code DOES through runtime tools.
+
+MANDATORY TOOL USE
+- If the user asks you to perform an action and a matching tool exists, CALL THE TOOL instead of giving manual instructions.
+- If github__create_issue exists and the user asks to create a GitHub issue, call github__create_issue.
+- If GitHub read tools exist and the user asks you to inspect repository code, use them instead of guessing.
+- If Supabase tools exist and the user asks about the database, inspect the real schema/data.
+- If Cloudflare tools exist and the user asks about a Worker or logs, use those tools.
+- If the user asks for a downloadable file, use ava__create_artifact instead of only returning Markdown code.
+
+@PROVIDER ROUTING
+- @GitHub means prefer GitHub tools.
+- @Supabase means prefer Supabase tools.
+- @Cloudflare means prefer Cloudflare tools.
+- @Google Drive means prefer Google Drive tools.
+- @Vercel, @Render, @Stripe, and @Sentry work the same way.
+- Multiple mentions may combine providers.
+
+SAFETY
 - Prefer read/search/list/get tools before write tools.
-- Use tools only when relevant.
-- Never claim a tool succeeded unless its tool result says it succeeded.
-- If the runtime denies or the user cancels a tool action, respect that decision.
-- When GitHub tools are available, use them to inspect actual repository files instead of guessing.
-- When Supabase tools are available, inspect schema before proposing SQL changes.
-- Treat Cloudflare deploy/DNS actions, repository writes, database mutations, uploads, deletes, secrets, commits, merges and production changes as consequential.
-- The runtime will request user approval for consequential MCP calls.
+- Never claim a tool succeeded unless its returned result proves success.
+- Respect denied approval.
+- Writes, deploys, database mutations, DNS changes, uploads, deletes, secret changes, commits, merges, permission changes and production operations are consequential and may require runtime approval.
 
-Engineering rules:
-- Prefer complete, directly usable code and patches.
-- Identify which files should change.
+ENGINEERING
+- Understand repositories using tools instead of inventing file contents.
 - Preserve existing architecture unless a refactor is justified.
+- Identify files that should change.
+- Prefer complete, directly usable code and patches.
 - Explain verification steps.
-- The product identity is Ava Code. The underlying model is Qwen3 Coder when available through OpenRouter.`
+- The product identity is Ava Code. The underlying inference model is Qwen3 Coder when available through OpenRouter.`
     });
 
     const candidates=["qwen/qwen3-coder:free","openrouter/free"];
@@ -4295,11 +4359,77 @@ Engineering rules:
         });
 
         for(const toolCall of toolCalls){
-          const toolResult=toolCall?.function?.name==="ava__create_artifact"?await createSafeArtifact(toolCall,node):await callMcpToolFromCode(toolCall,node);
+          const toolResult=toolCall?.function?.name==="ava__create_artifact"
+            ? await createSafeArtifact(toolCall,node)
+            : await callMcpToolFromCode(toolCall,node);
           messages.push(toolResult);
         }
 
         continue;
+      }
+
+      const userText=[...chat.messages].reverse().find(m=>m.role==="user")?.content || "";
+      const preferredTool=explicitPreferredTool(userText,openAiTools);
+      const falselyNoAccess=textWronglyClaimsNoAccess(message.content || "");
+
+      if(preferredTool && (falselyNoAccess || round===0)){
+        const forceStep=codeActivity(node,`Forçando ferramenta: ${preferredTool.replace(/^mcp__/,"").replace(/__/g," → ")}`);
+
+        const forcedBody={
+          model:selectedModel || candidates[0],
+          messages:[
+            ...messages,
+            {
+              role:"system",
+              content:`A real matching tool exists: ${preferredTool}. Call it now. Do not give manual instructions and do not claim lack of access.`
+            }
+          ],
+          max_tokens:4096,
+          temperature:0.05,
+          tools:openAiTools,
+          tool_choice:{
+            type:"function",
+            function:{name:preferredTool}
+          }
+        };
+
+        const forcedResponse=await fetch("/api/openrouter/chat/completions",{
+          method:"POST",
+          headers:{"content-type":"application/json"},
+          body:JSON.stringify(forcedBody),
+          signal:state.controller.signal
+        });
+
+        const forcedPayload=await forcedResponse.json().catch(()=>({}));
+
+        if(forcedResponse.ok){
+          const forcedMessage=forcedPayload?.choices?.[0]?.message || {};
+          const forcedCalls=Array.isArray(forcedMessage.tool_calls) ? forcedMessage.tool_calls : [];
+
+          if(forcedCalls.length){
+            forceStep.classList.remove("running");
+            forceStep.classList.add("done");
+
+            messages.push({
+              role:"assistant",
+              content:forcedMessage.content || "",
+              tool_calls:forcedCalls
+            });
+
+            for(const toolCall of forcedCalls){
+              const toolResult=toolCall?.function?.name==="ava__create_artifact"
+                ? await createSafeArtifact(toolCall,node)
+                : await callMcpToolFromCode(toolCall,node);
+              messages.push(toolResult);
+            }
+
+            continue;
+          }
+        }
+
+        forceStep.classList.remove("running");
+        forceStep.classList.add("error");
+        forceStep.querySelector("span:last-child").textContent="O modelo não executou a ferramenta obrigatória";
       }
 
       finalContent=message.content || "";

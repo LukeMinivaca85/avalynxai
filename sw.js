@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.3-safe-artifacts";
+const CACHE = "ava-i-shell-v6.3.1-tool-prompt-fix";
 const ASSETS = [
   "/",
   "/index.html",
