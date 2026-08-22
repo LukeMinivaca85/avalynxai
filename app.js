@@ -727,7 +727,7 @@ function perMillion(price) {
 async function fetchKeyInfo() {
   if (!openRouterReady()) return null;
   try {
-    const res = await fetch("/api/openrouter/key", {headers: {}
+    const res = await fetch("/api/nvidia/key", {headers: {}
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -757,7 +757,7 @@ async function loadModelCatalog(force = false) {
 
   try {
     const [modelsRes, keyInfo] = await Promise.all([
-      fetch("/api/openrouter/models/user", {headers: {}
+      fetch("/api/nvidia/models/user", {headers: {}
       }),
       fetchKeyInfo()
     ]);
@@ -1174,7 +1174,7 @@ async function loadImageModels(force = false) {
   els.imageModelSelect.innerHTML = '<option value="">Carregando…</option>';
 
   try {
-    const res = await fetch("/api/openrouter/images/models", {headers: {}
+    const res = await fetch("/api/nvidia/images/models", {headers: {}
     });
     if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
     const data = await res.json();
@@ -1267,7 +1267,7 @@ async function generateImageResponse(chat, promptText) {
       output_format: "png"
     };
 
-    const res = await fetch("/api/openrouter/images", {
+    const res = await fetch("/api/nvidia/images", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -1553,7 +1553,7 @@ function deleteEditingAgent() {
 
 function nvidiaReady(){return state.serverConfig?.nvidia===true;}
 const NVIDIA_CHAT_MODEL="nvidia/nemotron-3-ultra-550b-a55b";
-const NVIDIA_CHAT_FALLBACK="meta/llama-4-maverick-17b-128e-instruct";
+const NVIDIA_CHAT_FALLBACK="nvidia/nemotron-3-ultra-550b-a55b";
 const NVIDIA_CODE_MODEL=NVIDIA_CHAT_MODEL;
 
 function openRouterReady() {
@@ -3841,7 +3841,7 @@ async function resolveAuthoritativeNow(modelId, signal) {
   const fallback = browserDateFallback();
 
   try {
-    const res = await fetch("/api/openrouter/chat/completions", {
+    const res = await fetch("/api/nvidia/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -4317,7 +4317,7 @@ ENGINEERING
 - The product identity is Ava Code. The primary inference model is NVIDIA Nemotron 3 Ultra through NVIDIA NIM.`
     });
 
-    const candidates=[NVIDIA_CODE_MODEL,NVIDIA_CHAT_FALLBACK];
+    const candidates=[NVIDIA_CODE_MODEL];
     let selectedModel=null;
     let finalContent="";
     let lastError=null;
@@ -4533,7 +4533,7 @@ async function generateAssistant(chat, requestContext = null) {
     const requestModel = activeAgent?.model || NVIDIA_CHAT_MODEL;
     if(!nvidiaReady()) throw Object.assign(new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY."),{status:503});
 
-    const candidateModels=[requestModel,NVIDIA_CHAT_MODEL,NVIDIA_CHAT_FALLBACK].filter((m,i,a)=>m&&a.indexOf(m)===i);
+    const candidateModels=[NVIDIA_CHAT_MODEL];
 
     let res = null;
     let selectedModel = requestModel;
@@ -4549,7 +4549,7 @@ async function generateAssistant(chat, requestContext = null) {
 
       const lastUserMessage = [...chat.messages].reverse().find(m => m.role === "user");
       if (lastUserMessage?.webSearch) {
-        body.messages.splice(1,0,{role:"system",content:"The user requested fresh web information, but direct NVIDIA NIM mode does not provide the old OpenRouter web-search tool. Be explicit about that limitation rather than inventing current facts."});
+        body.messages.splice(1,0,{role:"system",content:"The user requested fresh web information, but direct NVIDIA NIM mode does not provide the old NVIDIA NIM web-search tool. Be explicit about that limitation rather than inventing current facts."});
       }
 
       const attempt = await fetch("/api/nvidia/chat/completions", {
@@ -4648,9 +4648,9 @@ async function generateAssistant(chat, requestContext = null) {
     } else if (err.status === 402) {
       assistantMsg.content = `## Ava I está sem créditos
 
-A OpenRouter recusou esta geração porque a chave atual não possui créditos suficientes.
+A NVIDIA NIM recusou esta geração porque a chave atual não possui créditos suficientes.
 
-**O que fazer:** adicione créditos à sua conta OpenRouter ou escolha um modelo mais econômico nas configurações.
+**O que fazer:** adicione créditos à sua conta NVIDIA NIM ou escolha um modelo mais econômico nas configurações.
 
 Ava I usa um teto alto de saída e continua automaticamente quando o modelo encerra por limite de comprimento. O limite físico final ainda depende do modelo/provedor.`;
     } else if (err.status === 401) {
@@ -4667,7 +4667,7 @@ A NVIDIA NIM está aplicando rate limit nesta chave ou modelo. Tente novamente d
     ) {
       assistantMsg.content = `## Não consegui enviar os anexos
 
-A OpenRouter recusou o payload multimodal antes de a Ava analisar os arquivos.
+A NVIDIA NIM recusou o payload multimodal antes de a Ava analisar os arquivos.
 
 **Erro:** ${err.status || "—"} · ${String(err.message || err)}
 

@@ -664,3 +664,20 @@ Fixes errors observed in production:
 
 ## v6.5 — NVIDIA NIM
 Ava Chat and Ava Code use NVIDIA NIM directly. Primary: `nvidia/nemotron-3-ultra-550b-a55b`. Fallback: `meta/llama-4-maverick-17b-128e-instruct`. Configure `NVIDIA_API_KEY` server-side.
+
+## v6.5.1 — NVIDIA-only runtime
+
+Chat, Ava Code, auto-title and long-response continuations use NVIDIA NIM.
+There is no runtime fallback to OpenRouter for chat completion requests.
+If `NVIDIA_API_KEY` is missing, Ava returns a clear NVIDIA configuration error instead of silently switching providers.
+
+Primary model: `nvidia/nemotron-3-ultra-550b-a55b`
+Fallback model: `meta/llama-4-maverick-17b-128e-instruct`
+
+## v6.5.2 — Nemotron-only
+
+All Ava Chat and Ava Code inference now uses only:
+`nvidia/nemotron-3-ultra-550b-a55b`
+
+There is no Llama 4 Maverick fallback and no OpenRouter chat-completion fallback.
+If the NVIDIA Nemotron endpoint is unavailable or rate-limited, Ava surfaces the NVIDIA error instead of silently changing models.
