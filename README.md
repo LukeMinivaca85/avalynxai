@@ -148,3 +148,14 @@ Stray repeated `svgsvgsvg` text is removed from assistant rendering.
 - Qwen Coder via Hugging Face remains Ava Code's conversational/coding model when the Codex engine is not used or unavailable.
 - Image, video and music generation now render as rich Avalynx media cards with generating state, preview/player, model/provider metadata, open/download actions, and image edit affordance.
 - Google AI Studio remains the first-choice media provider when an applicable Google model is available.
+
+
+## v6.8.1 — Codex CLI diagnostics
+
+Codex failures now expose structured diagnostics instead of a bare HTTP 502.
+
+`GET /api/code/status` includes binary path, sandbox, timeout, auth-env presence, platform, architecture and Node version.
+
+`POST /api/code/run` failures include exitCode, classified cause (`auth`, `sandbox`, `path`, `timeout`, `quota`, `runtime`), sanitized stderr/stdout, and command metadata.
+
+Ava Code renders these details directly in the conversation. Common API-key patterns are redacted before diagnostics are returned.

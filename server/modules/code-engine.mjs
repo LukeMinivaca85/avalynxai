@@ -154,6 +154,36 @@ function humanCodexSummary(stdout,stderr){
   return messages.at(-1)||String(stderr||"").trim()||"Codex CLI completed.";
 }
 
+
+function classifyCodexFailure({code,stdout="",stderr="",error=""}={}){
+  const text=`${stdout}\n${stderr}\n${error}`.toLowerCase();
+
+  if(/unauthorized|authentication|api key|invalid api key|missing.*key|login required|not authenticated|401|403/.test(text)){
+    return {kind:"auth",title:"Autenticação do Codex falhou",hint:"O Codex CLI está instalado, mas o backend não está autenticado para executar tarefas."};
+  }
+  if(/sandbox|landlock|bubblewrap|bwrap|permission denied|operation not permitted|workspace-write|seccomp/.test(text)){
+    return {kind:"sandbox",title:"Sandbox do Codex falhou",hint:"O Codex iniciou, mas o sandbox workspace-write foi bloqueado pelo ambiente do servidor."};
+  }
+  if(/enoent|not found|command not found|spawn .*codex/.test(text)){
+    return {kind:"path",title:"Codex CLI não encontrado",hint:"A execução não encontrou o binário configurado no PATH."};
+  }
+  if(/timed out|timeout|deadline/.test(text)){
+    return {kind:"timeout",title:"Codex excedeu o tempo limite",hint:"A execução passou do limite configurado no backend."};
+  }
+  if(/rate limit|quota|insufficient|credits|billing|429|402/.test(text)){
+    return {kind:"quota",title:"Limite do provider do Codex",hint:"O provider recusou a execução por cota, rate limit ou cobrança."};
+  }
+  return {kind:"runtime",title:"Codex CLI encerrou com erro",hint:"Veja stderr/stdout abaixo para identificar a causa concreta."};
+}
+
+function safeDiagnosticText(value,max=12000){
+  return String(value||"")
+    .replace(/sk-[A-Za-z0-9_-]{12,}/g,"[REDACTED_OPENAI_KEY]")
+    .replace(/hf_[A-Za-z0-9]{12,}/g,"[REDACTED_HF_TOKEN]")
+    .replace(/nvapi-[A-Za-z0-9_-]{12,}/g,"[REDACTED_NVIDIA_KEY]")
+    .slice(0,max);
+}
+
 export async function handleCodeEngine(req,res,url,body={}){
   if(url.pathname==="/api/code/status"&&req.method==="GET"){
     const available=await commandExists(codexBin());
@@ -162,7 +192,14 @@ export async function handleCodeEngine(req,res,url,body={}){
       available,
       binary:codexBin(),
       sandbox:"workspace-write",
-      timeoutMs:RUN_TIMEOUT_MS
+      timeoutMs:RUN_TIMEOUT_MS,
+      authEnvPresent:Boolean(process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY),
+      diagnostics:{
+        cwd:process.cwd(),
+        node:process.version,
+        platform:process.platform,
+        arch:process.arch
+      }
     });
   }
 
@@ -194,6 +231,7 @@ export async function handleCodeEngine(req,res,url,body={}){
       const changedFiles=changed(before,after);
       const files=await readChangedFiles(dir,changedFiles);
 
+      const failure=result.code===0 ? null : classifyCodexFailure(result);
       return json(res,result.code===0?200:502,{
         engine:"codex-cli",
         workspaceId:id,
@@ -201,10 +239,28 @@ export async function handleCodeEngine(req,res,url,body={}){
         summary:humanCodexSummary(result.stdout,result.stderr),
         changedFiles,
         files,
-        stderr:result.code===0?"":result.stderr.slice(0,8000)
+        failure,
+        stderr:result.code===0?"":safeDiagnosticText(result.stderr),
+        stdout:result.code===0?"":safeDiagnosticText(result.stdout),
+        command:{
+          binary:codexBin(),
+          args:["exec","--sandbox","workspace-write","--skip-git-repo-check","--json","<instruction>"]
+        }
       });
     }catch(error){
-      return json(res,502,{error:String(error?.message||error),engine:"codex-cli"});
+      const failure=classifyCodexFailure({error:String(error?.message||error)});
+      return json(res,502,{
+        error:safeDiagnosticText(error?.message||error),
+        engine:"codex-cli",
+        failure,
+        exitCode:null,
+        stderr:"",
+        stdout:"",
+        command:{
+          binary:codexBin(),
+          args:["exec","--sandbox","workspace-write","--skip-git-repo-check","--json","<instruction>"]
+        }
+      });
     }finally{
       setTimeout(()=>fs.rm(dir,{recursive:true,force:true}).catch(()=>{}),30*60*1000).unref?.();
     }

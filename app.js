@@ -4785,6 +4785,16 @@ async function publishCodexFiles(files=[]) {
   return published;
 }
 
+
+async function debugCodexStatus(){
+  try{
+    const res=await fetch("/api/code/status",{headers:{"accept":"application/json"}});
+    return await res.json();
+  }catch(error){
+    return {available:false,error:String(error?.message||error)};
+  }
+}
+
 async function runCodexCliEngine(userText,requestContext,node){
   if(!shouldUseCodexEngine(userText,requestContext))return null;
 
@@ -4814,8 +4824,28 @@ ${userText}`;
   if(!res.ok){
     step.classList.remove("running");
     step.classList.add("error");
-    step.querySelector("span:last-child").textContent=`Codex CLI · ${data.error||res.status}`;
-    return null;
+
+    const failure=data?.failure||{};
+    step.querySelector("span:last-child").textContent=failure.title||`Codex CLI · erro ${res.status}`;
+
+    const sections=[
+      "## Codex CLI falhou",
+      failure.title ? `**Diagnóstico:** ${failure.title}` : "",
+      failure.hint ? `**Provável causa:** ${failure.hint}` : "",
+      data.exitCode!==undefined && data.exitCode!==null ? `**exitCode:** \`${data.exitCode}\`` : "",
+      data.error ? `**Erro:** \`${String(data.error)}\`` : "",
+      data.stderr ? `### stderr\n\`\`\`text\n${String(data.stderr).slice(0,12000)}\n\`\`\`` : "",
+      data.stdout ? `### stdout\n\`\`\`text\n${String(data.stdout).slice(0,12000)}\n\`\`\`` : "",
+      data.command?.binary ? `### Comando\n\`${data.command.binary} ${Array.isArray(data.command.args)?data.command.args.join(" "):""}\`` : ""
+    ].filter(Boolean);
+
+    return {
+      content:sections.join("\n\n"),
+      engine:"codex-cli-debug",
+      changedFiles:[],
+      files:[],
+      failed:true
+    };
   }
 
   step.classList.remove("running");
@@ -4872,8 +4902,8 @@ async function generateAvaCode(chat,requestContext=null){
       assistantMsg.codeEngine=codexResult.engine;
       assistantMsg.changedFiles=codexResult.changedFiles;
       thinking.classList.remove("running");
-      thinking.classList.add("done");
-      thinking.querySelector("span:last-child").textContent="Codex CLI finalizado";
+      thinking.classList.add(codexResult.failed ? "error" : "done");
+      thinking.querySelector("span:last-child").textContent=codexResult.failed ? "Codex CLI falhou · diagnóstico exibido" : "Codex CLI finalizado";
       contentNode.innerHTML=renderMarkdown(assistantMsg.content);
       finalizeRichMessage(node);
       persist();

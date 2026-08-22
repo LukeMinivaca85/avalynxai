@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.8-codex-media-widgets";
+const CACHE = "ava-i-shell-v6.8.1-codex-debug";
 const ASSETS = [
   "/",
   "/index.html",
