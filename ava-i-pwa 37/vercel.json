@@ -1,0 +1,38 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/mcp/:path*",
+      "destination": "/api/mcp?path=:path*"
+    },
+    {
+      "source": "/api/nvidia/:path*",
+      "destination": "/api/proxy?path=nvidia/:path*"
+    },
+    {
+      "source": "/api/config",
+      "destination": "/api/proxy?path=config"
+    },
+    {
+      "source": "/api/eleven/:path*",
+      "destination": "/api/proxy?path=eleven/:path*"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ]
+}
