@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.5.2-nemotron-only";
+const CACHE = "ava-i-shell-v6.5.3-nvidia-clean";
 const ASSETS = [
   "/",
   "/index.html",

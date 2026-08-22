@@ -322,12 +322,9 @@ Plausible is not the same as true.
 Never invent.`;
 
 const DEFAULT_MODEL_VERSION = 4;
-const DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
-const DEFAULT_MODEL_LABEL = "Ava I · Ultra Free";
-const FREE_FALLBACK_MODELS = [
-  "deepseek/deepseek-v4-flash:free",
-  "openrouter/free"
-];
+const DEFAULT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
+const DEFAULT_MODEL_LABEL = "NVIDIA Nemotron 3 Ultra";
+const FREE_FALLBACK_MODELS = ["nvidia/nemotron-3-ultra-550b-a55b"];
 
 const state = {
   chats: [],
@@ -338,7 +335,7 @@ const state = {
   appMode: "chat",
   serverConfig: {
     loaded: false,
-    openrouter: false,
+    nvidia: false,
     elevenlabs: false,
     deployment: "local"
   },
@@ -725,9 +722,9 @@ function perMillion(price) {
 }
 
 async function fetchKeyInfo() {
-  if (!openRouterReady()) return null;
+  if (!nvidiaReady()) return null;
   try {
-    const res = await fetch("/api/nvidia/key", {headers: {}
+    const res = await fetch("/api/nvidia/models", {headers: {}
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -739,10 +736,10 @@ async function fetchKeyInfo() {
 }
 
 async function loadModelCatalog(force = false) {
-  if (!openRouterReady()) {
+  if (!nvidiaReady()) {
     els.modelHubLoading.classList.add("hidden");
     els.modelHubEmpty.classList.remove("hidden");
-    els.modelHubEmpty.textContent = "Cole sua chave OpenRouter em Configurações para carregar os modelos da sua conta.";
+    els.modelHubEmpty.textContent = "Cole sua chave NVIDIA NIM em Configurações para carregar os modelos da sua conta.";
     return;
   }
 
@@ -757,7 +754,7 @@ async function loadModelCatalog(force = false) {
 
   try {
     const [modelsRes, keyInfo] = await Promise.all([
-      fetch("/api/nvidia/models/user", {headers: {}
+      fetch("/api/nvidia/models", {headers: {}
       }),
       fetchKeyInfo()
     ]);
@@ -1164,8 +1161,8 @@ function renderMessageExtras(node, msg) {
   if(Array.isArray(msg.annotations)&&msg.annotations.length){const sources=document.createElement("div");sources.className="message-sources";const title=document.createElement("div");title.className="sources-title";title.textContent="Fontes";sources.appendChild(title);const list=document.createElement("div");list.className="source-chips";msg.annotations.slice(0,8).forEach((source,index)=>{const a=document.createElement("a");a.className="source-chip";a.href=source.url;a.target="_blank";a.rel="noopener noreferrer";a.title=source.url;a.textContent=`${index+1} · ${source.title||"Fonte"}`;list.appendChild(a);});sources.appendChild(list);body.insertBefore(sources,node.querySelector(".message-actions"));}
 }
 async function loadImageModels(force = false) {
-  if (!openRouterReady()) {
-    els.imageStudioStatus.textContent = "Salve sua chave OpenRouter antes de carregar modelos de imagem.";
+  if (!nvidiaReady()) {
+    els.imageStudioStatus.textContent = "Salve sua chave NVIDIA NIM antes de carregar modelos de imagem.";
     return [];
   }
   if (state.imageModels.length && !force) return state.imageModels;
@@ -1174,9 +1171,9 @@ async function loadImageModels(force = false) {
   els.imageModelSelect.innerHTML = '<option value="">Carregando…</option>';
 
   try {
-    const res = await fetch("/api/nvidia/images/models", {headers: {}
+    const res = await fetch("/api/nvidia/models", {headers: {}
     });
-    if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
+    if (!res.ok) throw new Error(`NVIDIA NIM ${res.status}`);
     const data = await res.json();
     state.imageModels = Array.isArray(data.data) ? data.data : [];
 
@@ -1267,7 +1264,7 @@ async function generateImageResponse(chat, promptText) {
       output_format: "png"
     };
 
-    const res = await fetch("/api/nvidia/images", {
+    const res = await fetch("/api/nvidia/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -1304,7 +1301,7 @@ async function generateImageResponse(chat, promptText) {
     if (err.name === "AbortError") {
       assistantMsg.content = "Geração de imagem interrompida.";
     } else if (err.status === 402) {
-      assistantMsg.content = "A OpenRouter recusou a geração de imagem por créditos insuficientes.";
+      assistantMsg.content = "A NVIDIA NIM recusou a geração de imagem por créditos insuficientes.";
     } else {
       assistantMsg.content = `Não consegui gerar a imagem.\n\n\`${String(err.message || err)}\``;
     }
@@ -1551,14 +1548,7 @@ function deleteEditingAgent() {
 }
 
 
-function nvidiaReady(){return state.serverConfig?.nvidia===true;}
-const NVIDIA_CHAT_MODEL="nvidia/nemotron-3-ultra-550b-a55b";
-const NVIDIA_CHAT_FALLBACK="nvidia/nemotron-3-ultra-550b-a55b";
-const NVIDIA_CODE_MODEL=NVIDIA_CHAT_MODEL;
-
-function openRouterReady() {
-  return !!state.serverConfig?.openrouter || !!state.apiKey;
-}
+function nvidiaReady() { return state.serverConfig?.nvidia === true; }
 
 function elevenReady() {
   const serverManaged = state.serverConfig?.elevenlabs === true;
@@ -1587,14 +1577,13 @@ async function loadServerConfig() {
 
     state.serverConfig = {
       loaded: true,
-      openrouter: !!data.openrouter,
       nvidia: !!data.nvidia,
       elevenlabs: !!data.elevenlabs,
       deployment: data.deployment || "server"
     };
 
-    if (state.serverConfig.openrouter) {
-      state.apiKey = "__server_managed__";
+    if (state.serverConfig.nvidia) {
+      state.apiKey = "";
       state.rememberKey = false;
       if (els.apiKey) {
         els.apiKey.value = "";
@@ -1622,7 +1611,7 @@ async function loadServerConfig() {
     console.warn("Backend config unavailable; falling back to local/BYOK mode.", error);
     state.serverConfig = {
       loaded: true,
-      openrouter: false,
+      nvidia: false,
       elevenlabs: false,
       deployment: "local"
     };
@@ -3207,7 +3196,7 @@ async function extractFileText(file) {
     : `[Arquivo binário sem texto extraível no navegador. Nome: ${file.name}; tipo: ${file.type || "desconhecido"}; tamanho: ${file.size} bytes.]`;
 }
 
-function audioFormatForOpenRouter(file) {
+function audioFormatForNvidia(file) {
   const ext = extensionOf(file.name);
   const map = {
     wav: "wav", mp3: "mp3", aiff: "aiff", aif: "aiff", aac: "aac",
@@ -3252,7 +3241,7 @@ async function fileToParts(file) {
         type: "input_audio",
         input_audio: {
           data: await fileToRawBase64(file),
-          format: audioFormatForOpenRouter(file)
+          format: audioFormatForNvidia(file)
         }
       }];
     }
@@ -3614,7 +3603,7 @@ function titleFrom(text) {
 async function sendCurrent() {
   const text = els.prompt.value.trim();
   if ((!text && !state.attachments.length) || state.generating) return;
-  if (!openRouterReady()) {
+  if (!nvidiaReady()) {
     openSettings();
     els.apiKey.focus();
     return;
@@ -3763,7 +3752,7 @@ function multimodalRequirements(content) {
 }
 
 function modelSupportsInput(modelId, modality) {
-  if (modelId === "openrouter/free" && modality === "image") return true;
+  if (modelId === NVIDIA_CHAT_MODEL && modality === "image") return true;
   const model = state.modelCatalog.find(item => item.id === modelId);
   return !!model?.architecture?.input_modalities?.includes(modality);
 }
@@ -3772,7 +3761,7 @@ function candidateModelsForRequest(currentApiContent, preferredModel = state.mod
   const requirements = multimodalRequirements(currentApiContent);
   const needsImage = requirements.has("image");
 
-  if (!needsImage || preferredModel === "openrouter/free" || modelSupportsInput(preferredModel, "image")) {
+  if (!needsImage || preferredModel === NVIDIA_CHAT_MODEL || modelSupportsInput(preferredModel, "image")) {
     return [
       preferredModel,
       ...FREE_FALLBACK_MODELS.filter(m => m !== preferredModel)
@@ -3780,9 +3769,9 @@ function candidateModelsForRequest(currentApiContent, preferredModel = state.mod
   }
 
   return [
-    "openrouter/free",
+    NVIDIA_CHAT_MODEL,
     preferredModel,
-    ...FREE_FALLBACK_MODELS.filter(m => m !== preferredModel && m !== "openrouter/free")
+    ...FREE_FALLBACK_MODELS.filter(m => m !== preferredModel && m !== NVIDIA_CHAT_MODEL)
   ];
 }
 
@@ -3833,7 +3822,7 @@ function parseAuthoritativeDatetime(text) {
     date,
     time,
     timezone: "America/Sao_Paulo",
-    source: "openrouter:datetime"
+    source: "NVIDIA NIM:datetime"
   };
 }
 
@@ -3853,7 +3842,7 @@ async function resolveAuthoritativeNow(modelId, signal) {
           content: "Call the datetime tool. Then output ONLY the exact ISO datetime returned by the tool. Do not use memory and do not estimate."
         }],
         tools: [{
-          type: "openrouter:datetime",
+          type: "NVIDIA NIM:datetime",
           parameters: {
             timezone: "America/Sao_Paulo"
           }
@@ -4155,7 +4144,7 @@ function syncAvaModeUI(){
     els.prompt.placeholder="Descreva uma tarefa de programação para o Ava Code";
     const h=document.querySelector("#emptyState h1"),p=document.querySelector("#emptyState p");
     if(h)h.textContent="O que vamos construir?";
-    if(p)p.textContent="Ava Code entende projetos, propõe alterações e trabalha como um agente de programação usando Qwen3 Coder pelo OpenRouter.";
+    if(p)p.textContent="Ava Code entende projetos, propõe alterações e trabalha como um agente de programação usando Qwen3 Coder pelo NVIDIA NIM.";
   }else{
     els.modelLabel.textContent=state.modelLabel||DEFAULT_MODEL_LABEL;
     els.prompt.placeholder="Mensagem para a Ava I";
@@ -4747,7 +4736,7 @@ function saveSettings(e) {
   if (els.settingsSaveStatus) els.settingsSaveStatus.textContent = "Salvando no aparelho…";
 
   try {
-    if (!state.serverConfig?.openrouter) {
+    if (!state.serverConfig?.nvidia) {
       state.apiKey = els.apiKey.value.trim();
     }
     state.rememberKey = els.rememberKey.checked;
@@ -4953,7 +4942,7 @@ els.webToolBtn.onclick = () => {
     return;
   }
   if (!state.allowPaidTools) {
-    showToolGuard("A busca web da OpenRouter pode consumir créditos. Ative “Permitir ferramentas com custo” nas Configurações.");
+    showToolGuard("A busca web da NVIDIA NIM pode consumir créditos. Ative “Permitir ferramentas com custo” nas Configurações.");
     openSettings();
     return;
   }

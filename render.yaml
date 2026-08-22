@@ -7,13 +7,13 @@ services:
     startCommand: npm start
     healthCheckPath: /api/config
     envVars:
+      - key: NVIDIA_API_KEY
+        sync: false
       - key: NODE_VERSION
         value: "22"
-      - key: OPENROUTER_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: AVA_PUBLIC_URL
         sync: false
-      - key: OPENROUTER_APP_NAME
         value: "Ava I"

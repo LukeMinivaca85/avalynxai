@@ -117,6 +117,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`Ava I listening on 0.0.0.0:${port}`);
-  console.log(`OpenRouter configured: ${Boolean(process.env.OPENROUTER_API_KEY)}`);
+  console.log(`NVIDIA NIM configured: ${Boolean(process.env.NVIDIA_API_KEY)}`);
   console.log(`ElevenLabs configured: ${Boolean(process.env.ELEVENLABS_API_KEY)}`);
 });
