@@ -2559,3 +2559,13 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 .studio-market-icon img{max-width:21px;max-height:21px}.studio-market-copy strong,.studio-market-copy span{display:block}.studio-market-copy strong{font-size:11px}.studio-market-copy span{font-size:9px;color:var(--muted);margin-top:3px;line-height:1.35}
 .studio-install-btn{border:1px solid var(--border);background:var(--text);color:var(--bg);border-radius:9px;padding:6px 9px;font-size:9px;font-weight:800}.studio-install-btn.installed,.studio-install-btn:disabled{background:var(--soft);color:var(--muted)}
 @media(max-width:700px){.studio-market-grid{grid-template-columns:1fr}}
+
+/* v6.7 — Avalynx Model Router */
+.generated-media{display:grid;gap:10px;margin:12px 0}
+.generated-media video{width:100%;max-height:520px;border-radius:16px;background:#000;border:1px solid var(--border)}
+.generated-media audio{width:100%}
+.model-card-provider{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.price-tag{white-space:nowrap}
+.filter-pills{overflow-x:auto;scrollbar-width:none}
+.filter-pills::-webkit-scrollbar{display:none}
+.model-card .cap-chip{text-transform:capitalize}

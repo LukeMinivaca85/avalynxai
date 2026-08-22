@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.6.1-fresh-web";
+const CACHE = "ava-i-shell-v6.7-model-router";
 const ASSETS = [
   "/",
   "/index.html",

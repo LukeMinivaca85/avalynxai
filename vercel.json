@@ -4,6 +4,18 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/models",
+      "destination": "/api/router?route=/api/models"
+    },
+    {
+      "source": "/api/providers",
+      "destination": "/api/router?route=/api/providers"
+    },
+    {
+      "source": "/api/inference/:path*",
+      "destination": "/api/router?route=/api/inference/:path*"
+    },
+    {
       "source": "/api/mcp/:path*",
       "destination": "/api/mcp?path=:path*"
     },

@@ -391,7 +391,11 @@ const state = {
   imageModel: "",
   imageAspectRatio: "1:1",
   imageQuality: "auto",
-  imageCount: 1
+  imageCount: 1,
+  mediaModeActive: false,
+  mediaCapability: "",
+  mediaModel: "",
+  modelProviders: []
 };
 
 const els = {
@@ -458,7 +462,16 @@ const els = {
   refreshModelsBtn: $("#refreshModelsBtn"),
   webToolBtn: $("#webToolBtn"),
   imageToolBtn: $("#imageToolBtn"),
+  videoToolBtn: $("#videoToolBtn"),
+  musicToolBtn: $("#musicToolBtn"),
   activeToolBar: $("#activeToolBar"),
+  mediaStudio: $("#mediaStudioDialog"),
+  closeMediaStudio: $("#closeMediaStudio"),
+  mediaStudioTitle: $("#mediaStudioTitle"),
+  mediaModelSelect: $("#mediaModelSelect"),
+  mediaStudioStatus: $("#mediaStudioStatus"),
+  activateMediaModeBtn: $("#activateMediaModeBtn"),
+  cancelMediaModeBtn: $("#cancelMediaModeBtn"),
   imageStudio: $("#imageStudioDialog"),
   closeImageStudio: $("#closeImageStudio"),
   imageModelSelect: $("#imageModelSelect"),
@@ -691,27 +704,67 @@ function syncSettingsUI() {
 
 
 function modelProvider(model) {
-  return (model.id || "").split("/")[0] || "other";
+  return model?.provider || (model?.id || "").split("/")[0] || "other";
 }
 
 function isFreeModel(model) {
+  if (model?.free === true) return true;
+  if (model?.free === false) return false;
   const p = model?.pricing || {};
-  const nums = ["prompt", "completion", "request", "image", "web_search", "internal_reasoning"]
-    .map(k => Number(p[k] || 0))
+  const nums = ["prompt","completion","request","image","video","music","audio"]
+    .map(k => Number(p[k]))
     .filter(Number.isFinite);
   return nums.length > 0 && nums.every(v => v === 0);
 }
 
+function modelBillingStatus(model) {
+  if (model?.free === true || isFreeModel(model)) return "free";
+  if (model?.free === false) return "paid";
+  return "provider";
+}
+
 function modelCapabilities(model) {
+  const explicit = Array.isArray(model?.capabilities) ? model.capabilities : [];
+  if (explicit.length) return [...new Set(explicit)];
+
   const caps = [];
-  const params = model.supported_parameters || [];
-  const inputs = model.architecture?.input_modalities || [];
+  const params = model?.supported_parameters || [];
+  const inputs = model?.architecture?.input_modalities || [];
+  const outputs = model?.architecture?.output_modalities || [];
   if (params.includes("reasoning") || params.includes("include_reasoning")) caps.push("reasoning");
   if (params.includes("tools") || params.includes("tool_choice")) caps.push("tools");
   if (inputs.includes("image")) caps.push("vision");
   if (inputs.includes("file")) caps.push("files");
-  return caps;
+  if (outputs.includes("image")) caps.push("image");
+  if (outputs.includes("video")) caps.push("video");
+  if (outputs.includes("audio")) caps.push("audio");
+  if (!caps.some(c=>["image","video","music","audio","embeddings"].includes(c))) caps.push("chat");
+  return [...new Set(caps)];
 }
+
+function modelsForCapability(capability) {
+  return state.modelCatalog.filter(m => m.available !== false && modelCapabilities(m).includes(capability));
+}
+
+function bestModelForCapability(capability, preferred = "") {
+  if (preferred) {
+    const exact=state.modelCatalog.find(m=>m.id===preferred&&modelCapabilities(m).includes(capability)&&m.available!==false);
+    if (exact) return exact.id;
+  }
+  if (capability === "chat" || capability === "code") {
+    const nvidia=state.modelCatalog.find(m=>m.id==="nvidia/nemotron-3-ultra-550b-a55b"&&modelCapabilities(m).includes("chat"));
+    if (nvidia) return nvidia.id;
+  }
+  const free=modelsForCapability(capability).find(isFreeModel);
+  return free?.id || modelsForCapability(capability)[0]?.id || "";
+}
+function bestToolChatModel(preferred = "") {
+  const candidates=state.modelCatalog.filter(m=>m.available!==false&&modelCapabilities(m).includes("chat")&&modelCapabilities(m).includes("tools"));
+  const exact=candidates.find(m=>m.id===preferred);
+  if(exact)return exact.id;
+  return candidates.find(m=>m.id==="nvidia/nemotron-3-ultra-550b-a55b")?.id || candidates[0]?.id || bestModelForCapability("chat",preferred);
+}
+
 
 function formatContext(n) {
   if (!n) return "—";
@@ -727,30 +780,14 @@ function perMillion(price) {
 }
 
 async function fetchKeyInfo() {
-  if (!nvidiaReady()) return null;
-  try {
-    const res = await fetch("/api/nvidia/models", {headers: {}
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    state.keyInfo = json.data || null;
-    return state.keyInfo;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 async function loadModelCatalog(force = false) {
-  if (!nvidiaReady()) {
-    els.modelHubLoading.classList.add("hidden");
-    els.modelHubEmpty.classList.remove("hidden");
-    els.modelHubEmpty.textContent = "Cole sua chave NVIDIA NIM em Configurações para carregar os modelos da sua conta.";
-    return;
-  }
-
   if (state.modelCatalog.length && !force) {
+    populateProviderFilter();
     renderModelHub();
-    return;
+    return state.modelCatalog;
   }
 
   els.modelHubLoading.classList.remove("hidden");
@@ -758,41 +795,44 @@ async function loadModelCatalog(force = false) {
   els.modelGrid.innerHTML = "";
 
   try {
-    const [modelsRes, keyInfo] = await Promise.all([
-      fetch("/api/nvidia/models", {headers: {}
-      }),
-      fetchKeyInfo()
-    ]);
-
-    if (!modelsRes.ok) {
-      const raw = await modelsRes.text();
-      throw new Error(`Não foi possível carregar modelos (${modelsRes.status}). ${raw.slice(0, 240)}`);
+    const res = await fetch(`/api/models${force ? "?refresh=1" : ""}`, {headers:{"accept":"application/json"}});
+    if (!res.ok) {
+      const raw = await res.text();
+      throw new Error(`Avalynx Model Router ${res.status}: ${raw.slice(0,240)}`);
     }
-
-    const data = await modelsRes.json();
+    const data = await res.json();
     state.modelCatalog = Array.isArray(data.data) ? data.data : [];
+    state.modelProviders = Array.isArray(data.providers) ? data.providers : [];
 
-    if (keyInfo) {
-      const freeTier = keyInfo.is_free_tier ? "Free tier" : "Conta com créditos";
-      els.accountStatus.textContent = keyInfo.label ? `${freeTier} · ${keyInfo.label}` : freeTier;
-      const dot = els.accountStatus.parentElement.querySelector(".status-dot");
-      dot.classList.add("online");
-      const remaining = keyInfo.limit_remaining;
-      els.accountUsage.textContent = remaining == null
-        ? `Uso hoje: $${Number(keyInfo.usage_daily || 0).toFixed(4)}`
-        : `Limite restante: $${Number(remaining).toFixed(4)}`;
-    } else {
-      els.accountStatus.textContent = "Chave conectada";
-      els.accountStatus.parentElement.querySelector(".status-dot").classList.add("online");
-      els.accountUsage.textContent = "Catálogo conectado";
+    const configured = state.modelProviders.filter(p=>p.configured).length;
+    const errors = state.modelProviders.filter(p=>p.error).length;
+    els.accountStatus.textContent = `${configured} providers conectados`;
+    els.accountStatus.parentElement.querySelector(".status-dot")?.classList.toggle("online", configured > 0);
+    els.accountUsage.textContent = errors
+      ? `${state.modelCatalog.length} modelos · ${errors} provider(s) com erro`
+      : `${state.modelCatalog.length} modelos no Avalynx Router`;
+    els.modelHubSubtitle.textContent = "Catálogo dinâmico dos providers conectados diretamente à Avalynx.";
+
+    // Keep selected chat model valid when providers change.
+    if (!state.modelCatalog.some(m=>m.id===state.model&&modelCapabilities(m).includes("chat"))) {
+      const replacement = bestModelForCapability("chat");
+      if (replacement) {
+        state.model = replacement;
+        const meta=state.modelCatalog.find(m=>m.id===replacement);
+        state.modelLabel = `Ava I · ${meta?.name || replacement}`;
+        els.modelLabel.textContent = state.modelLabel;
+      }
     }
 
     populateProviderFilter();
     renderModelHub();
+    persist();
+    return state.modelCatalog;
   } catch (err) {
     els.modelHubLoading.classList.add("hidden");
     els.modelHubEmpty.classList.remove("hidden");
     els.modelHubEmpty.textContent = String(err.message || err);
+    return [];
   }
 }
 
@@ -818,6 +858,7 @@ function filteredModels() {
     if (filter === "reasoning" && !caps.includes("reasoning")) return false;
     if (filter === "vision" && !caps.includes("vision")) return false;
     if (filter === "tools" && !caps.includes("tools")) return false;
+    if (["chat","code","image","video","music","audio","embeddings"].includes(filter) && !caps.includes(filter)) return false;
     return true;
   }).sort((a, b) => {
     const af = isFreeModel(a) ? 0 : 1;
@@ -833,8 +874,9 @@ function renderModelHub() {
   els.modelGrid.innerHTML = "";
 
   for (const model of models) {
-    const free = isFreeModel(model);
-    const locked = !free && !state.allowPaidModels;
+    const billing = modelBillingStatus(model);
+    const free = billing === "free";
+    const locked = billing === "paid" && !state.allowPaidModels;
     const caps = modelCapabilities(model);
     const card = document.createElement("button");
     card.type = "button";
@@ -851,13 +893,14 @@ function renderModelHub() {
           <div class="model-card-title">${escapeHtml(model.name || model.id)}</div>
           <div class="model-card-provider">${escapeHtml(model.id)}</div>
         </div>
-        <span class="price-tag ${free ? "free" : ""}">${free ? "FREE" : locked ? "LOCKED" : "PAID"}</span>
+        <span class="price-tag ${free ? "free" : ""}">${free ? "FREE" : locked ? "LOCKED" : billing === "provider" ? "PROVIDER" : "PAID"}</span>
       </div>
       <div class="model-card-meta">
         ${capList.map(c => `<span class="cap-chip">${escapeHtml(c)}</span>`).join("")}
       </div>
       <div class="model-card-price">
-        ${free ? "US$0 input · US$0 output" :
+        ${free ? "US$0" :
+          billing === "provider" ? "Preço/limite definido pelo provider" :
           `Input ${perMillion(model.pricing?.prompt)} · Output ${perMillion(model.pricing?.completion)}`}
       </div>`;
 
@@ -866,11 +909,32 @@ function renderModelHub() {
         els.modelHubSubtitle.textContent = "Esse modelo é pago. Ative “Permitir pagos” se quiser selecioná-lo.";
         return;
       }
-      state.model = model.id;
-      state.modelLabel = `Ava I · ${model.name || model.id}`;
-      els.modelLabel.textContent = state.modelLabel;
-      els.modelInput.value = state.model;
+      const caps = modelCapabilities(model);
+      if (caps.includes("image") && !caps.includes("chat")) {
+        state.imageModel = model.id;
+        state.imageModeActive = true;
+        state.mediaModeActive = false;
+        showToolGuard(`Modelo de imagem selecionado: ${model.name || model.id}`);
+      } else if (caps.includes("video") && !caps.includes("chat")) {
+        state.mediaCapability = "video";
+        state.mediaModel = model.id;
+        state.mediaModeActive = true;
+        state.imageModeActive = false;
+        showToolGuard(`Modelo de vídeo selecionado: ${model.name || model.id}`);
+      } else if (caps.includes("music") && !caps.includes("chat")) {
+        state.mediaCapability = "music";
+        state.mediaModel = model.id;
+        state.mediaModeActive = true;
+        state.imageModeActive = false;
+        showToolGuard(`Modelo de música selecionado: ${model.name || model.id}`);
+      } else {
+        state.model = model.id;
+        state.modelLabel = `Ava I · ${model.name || model.id}`;
+        els.modelLabel.textContent = state.modelLabel;
+        els.modelInput.value = state.model;
+      }
       persist();
+      updateToolUI();
       renderModelHub();
       els.modelHub.close();
     };
@@ -885,8 +949,8 @@ function renderModelHub() {
 
 async function openModelHub() {
   syncSettingsUI();
-  state.modelFilter = "free";
-  $$(".filter-pill").forEach(b => b.classList.toggle("active", b.dataset.filter === "free"));
+  state.modelFilter = "all";
+  $$(".filter-pill").forEach(b => b.classList.toggle("active", b.dataset.filter === "all"));
   els.modelHub.showModal();
   await loadModelCatalog(false);
 }
@@ -906,12 +970,20 @@ function updateToolUI() {
 
   els.imageToolBtn.classList.toggle("active", state.imageModeActive);
   els.imageToolBtn.setAttribute("aria-pressed", String(state.imageModeActive));
+  els.videoToolBtn?.classList.toggle("active", state.mediaModeActive && state.mediaCapability === "video");
+  els.videoToolBtn?.setAttribute("aria-pressed", String(state.mediaModeActive && state.mediaCapability === "video"));
+  els.musicToolBtn?.classList.toggle("active", state.mediaModeActive && state.mediaCapability === "music");
+  els.musicToolBtn?.setAttribute("aria-pressed", String(state.mediaModeActive && state.mediaCapability === "music"));
 
   const active = [];
   if (state.webSearchActive) active.push("Web · busca obrigatória e atual");
   if (state.imageModeActive) {
-    const selected = state.imageModels.find(m => m.id === state.imageModel);
+    const selected = state.modelCatalog.find(m => m.id === state.imageModel);
     active.push(`Criar imagem${selected ? ` · ${selected.name || selected.id}` : ""}`);
+  }
+  if (state.mediaModeActive) {
+    const selected = state.modelCatalog.find(m => m.id === state.mediaModel);
+    active.push(`${state.mediaCapability === "video" ? "Criar vídeo" : "Criar música"}${selected ? ` · ${selected.name || selected.id}` : ""}`);
   }
 
   if (active.length) {
@@ -924,6 +996,10 @@ function updateToolUI() {
 
   if (state.imageModeActive) {
     els.prompt.placeholder = "Descreva a imagem que a Ava I deve criar";
+  } else if (state.mediaModeActive && state.mediaCapability === "video") {
+    els.prompt.placeholder = "Descreva o vídeo que a Ava I deve criar";
+  } else if (state.mediaModeActive && state.mediaCapability === "music") {
+    els.prompt.placeholder = "Descreva a música que a Ava I deve criar";
   } else if (state.webSearchActive) {
     els.prompt.placeholder = "Pergunte algo para pesquisar na web";
   } else {
@@ -1163,52 +1239,39 @@ function renderMessageExtras(node, msg) {
   body.querySelector(".ava-widgets")?.remove(); body.querySelector(".generated-images")?.remove(); body.querySelector(".message-sources")?.remove();
   if(Array.isArray(msg.widgets)&&msg.widgets.length){const wrap=document.createElement("div");wrap.className="ava-widgets";for(const w of msg.widgets.slice(0,3)){const n=normalizeWidget(w);if(n)wrap.appendChild(renderWidget(n));}if(wrap.children.length)body.insertBefore(wrap,node.querySelector(".message-actions"));}
   if(Array.isArray(msg.images)&&msg.images.length){const wrap=document.createElement("div");const count=Math.min(4,msg.images.length);wrap.className=`generated-images image-group count-${count}`;wrap.setAttribute("aria-label",`${msg.images.length} imagem${msg.images.length===1?"":"s"}`);msg.images.slice(0,4).forEach((image,index)=>{const b=document.createElement("button");b.type="button";b.className="generated-image-link";b.setAttribute("aria-label",`Abrir imagem ${index+1}`);const img=document.createElement("img");img.src=image.src;img.alt=image.alt||`Imagem gerada ${index+1}`;img.loading="lazy";b.appendChild(img);b.onclick=()=>openImageLightbox(image.src,img.alt);wrap.appendChild(b);});body.insertBefore(wrap,node.querySelector(".message-actions"));}
+  if(Array.isArray(msg.media)&&msg.media.length){
+    const wrap=document.createElement("div");wrap.className="generated-media";
+    msg.media.slice(0,4).forEach(item=>{
+      if(item.type==="video"){
+        const v=document.createElement("video");v.src=item.src;v.controls=true;v.playsInline=true;v.preload="metadata";wrap.appendChild(v);
+      }else{
+        const a=document.createElement("audio");a.src=item.src;a.controls=true;a.preload="metadata";wrap.appendChild(a);
+      }
+    });
+    body.insertBefore(wrap,node.querySelector(".message-actions"));
+  }
   if(Array.isArray(msg.annotations)&&msg.annotations.length){const sources=document.createElement("div");sources.className="message-sources";const title=document.createElement("div");title.className="sources-title";title.textContent="Fontes";sources.appendChild(title);const list=document.createElement("div");list.className="source-chips";msg.annotations.slice(0,8).forEach((source,index)=>{const a=document.createElement("a");a.className="source-chip";a.href=source.url;a.target="_blank";a.rel="noopener noreferrer";a.title=source.url;a.textContent=`${index+1} · ${source.title||"Fonte"}`;list.appendChild(a);});sources.appendChild(list);body.insertBefore(sources,node.querySelector(".message-actions"));}
 }
 async function loadImageModels(force = false) {
-  if (!nvidiaReady()) {
-    els.imageStudioStatus.textContent = "Salve sua chave NVIDIA NIM antes de carregar modelos de imagem.";
-    return [];
+  if (!state.modelCatalog.length || force) await loadModelCatalog(force);
+  state.imageModels = modelsForCapability("image");
+
+  els.imageModelSelect.innerHTML = state.imageModels
+    .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.id)} · ${escapeHtml(modelProvider(m))}</option>`)
+    .join("");
+
+  if (!state.imageModel || !state.imageModels.some(m => m.id === state.imageModel)) {
+    state.imageModel = bestModelForCapability("image");
   }
-  if (state.imageModels.length && !force) return state.imageModels;
-
-  els.imageStudioStatus.textContent = "Carregando modelos de geração de imagem…";
-  els.imageModelSelect.innerHTML = '<option value="">Carregando…</option>';
-
-  try {
-    const res = await fetch("/api/nvidia/models", {headers: {}
-    });
-    if (!res.ok) throw new Error(`NVIDIA NIM ${res.status}`);
-    const data = await res.json();
-    state.imageModels = Array.isArray(data.data) ? data.data : [];
-
-    els.imageModelSelect.innerHTML = state.imageModels
-      .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.id)}</option>`)
-      .join("");
-
-    if (!state.imageModel || !state.imageModels.some(m => m.id === state.imageModel)) {
-      state.imageModel = state.imageModels[0]?.id || "";
-    }
-    els.imageModelSelect.value = state.imageModel;
-
-    els.imageStudioStatus.textContent = state.imageModels.length
-      ? `${state.imageModels.length} modelos de imagem disponíveis.`
-      : "Nenhum modelo de imagem foi retornado para esta chave.";
-    persist();
-    return state.imageModels;
-  } catch (err) {
-    els.imageStudioStatus.textContent = `Não consegui carregar os modelos: ${String(err.message || err)}`;
-    els.imageModelSelect.innerHTML = '<option value="">Falha ao carregar</option>';
-    return [];
-  }
+  els.imageModelSelect.value = state.imageModel || "";
+  els.imageStudioStatus.textContent = state.imageModels.length
+    ? `${state.imageModels.length} modelos de imagem no Avalynx Model Router.`
+    : "Nenhum provider conectado anunciou modelos de imagem.";
+  persist();
+  return state.imageModels;
 }
 
 async function openImageStudio() {
-  if (!state.allowPaidTools) {
-    showToolGuard("Geração de imagem pode consumir créditos. Ative “Permitir ferramentas com custo” nas Configurações.");
-    openSettings();
-    return;
-  }
   els.imageStudio.showModal();
   await loadImageModels(false);
 }
@@ -1216,14 +1279,13 @@ async function openImageStudio() {
 function resetOneShotTools() {
   state.webSearchActive = false;
   state.imageModeActive = false;
+  state.mediaModeActive = false;
+  state.mediaCapability = "";
+  state.mediaModel = "";
   updateToolUI();
 }
 
 async function generateImageResponse(chat, promptText) {
-  if (!state.allowPaidTools) {
-    showToolGuard("Geração de imagem bloqueada para evitar cobrança surpresa.");
-    return;
-  }
   if (!state.imageModel) {
     await loadImageModels(false);
     if (!state.imageModel) {
@@ -1262,14 +1324,16 @@ async function generateImageResponse(chat, promptText) {
 
     const body = {
       model: state.imageModel,
-      prompt: promptText,
-      n: requestedCount,
-      aspect_ratio: state.imageAspectRatio || "1:1",
-      quality: state.imageQuality || "auto",
-      output_format: "png"
+      input: {
+        prompt: promptText,
+        n: requestedCount,
+        aspect_ratio: state.imageAspectRatio || "1:1",
+        quality: state.imageQuality || "auto",
+        output_format: "png"
+      }
     };
 
-    const res = await fetch("/api/nvidia/chat/completions", {
+    const res = await fetch("/api/inference/image", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -1290,7 +1354,7 @@ async function generateImageResponse(chat, promptText) {
     }
 
     const data = await res.json();
-    const images = (data.data || []).map((item, index) => {
+    const images = (data.outputs || []).map((item, index) => {
       if (item.url) return { src: item.url, alt: `Imagem gerada ${index + 1}` };
       if (item.b64_json) return { src: `data:image/png;base64,${item.b64_json}`, alt: `Imagem gerada ${index + 1}` };
       return null;
@@ -1301,12 +1365,12 @@ async function generateImageResponse(chat, promptText) {
       ? `${images.length === 1 ? "Imagem gerada" : `Grupo com ${images.length} imagens gerado`} com ${state.imageModels.find(m => m.id === state.imageModel)?.name || state.imageModel}.`
       : "A geração terminou, mas a API não retornou uma imagem utilizável.";
 
-    if (data.usage?.cost != null) assistantMsg.imageCost = data.usage.cost;
+    
   } catch (err) {
     if (err.name === "AbortError") {
       assistantMsg.content = "Geração de imagem interrompida.";
     } else if (err.status === 402) {
-      assistantMsg.content = "A NVIDIA NIM recusou a geração de imagem por créditos insuficientes.";
+      assistantMsg.content = "O provider recusou a geração por limite ou cobrança.";
     } else {
       assistantMsg.content = `Não consegui gerar a imagem.\n\n\`${String(err.message || err)}\``;
     }
@@ -1323,6 +1387,65 @@ async function generateImageResponse(chat, promptText) {
     persist();
     renderChatList();
     autoRenameChat(chat).catch(console.warn);
+  }
+}
+
+async function openMediaStudio(capability) {
+  state.mediaCapability = capability;
+  if (!state.modelCatalog.length) await loadModelCatalog(false);
+  const models=modelsForCapability(capability);
+  els.mediaStudioTitle.textContent = capability === "video" ? "Criar vídeo" : "Criar música";
+  els.mediaModelSelect.innerHTML=models.map(m=>`<option value="${escapeHtml(m.id)}">${escapeHtml(m.name||m.id)} · ${escapeHtml(modelProvider(m))}</option>`).join("");
+  state.mediaModel = models.some(m=>m.id===state.mediaModel) ? state.mediaModel : bestModelForCapability(capability);
+  els.mediaModelSelect.value=state.mediaModel||"";
+  els.mediaStudioStatus.textContent=models.length
+    ? `${models.length} modelos de ${capability === "video" ? "vídeo" : "música"} no Avalynx Model Router.`
+    : `Nenhum provider conectado anunciou modelos de ${capability === "video" ? "vídeo" : "música"}.`;
+  if(!els.mediaStudio.open)els.mediaStudio.showModal();
+}
+
+async function generateMediaResponse(chat,promptText,capability,modelId){
+  state.generating=true;
+  state.controller=new AbortController();
+  els.sendIcon.textContent="■";
+  els.send.title="Parar";
+
+  const assistantMsg={
+    id:uid(),role:"assistant",
+    content:capability==="video"?"Criando vídeo…":"Criando música…",
+    media:[],createdAt:Date.now()
+  };
+  chat.messages.push(assistantMsg);persist();
+  els.empty.classList.add("hidden");
+  const node=appendMessageElement(assistantMsg,true);
+  const contentNode=node.querySelector(".message-content");
+  scrollToBottom();
+
+  try{
+    const res=await fetch(`/api/inference/${capability}`,{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({model:modelId,input:{prompt:promptText}}),
+      signal:state.controller.signal
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw Object.assign(new Error(data.error||`${res.status}`),{status:res.status});
+    assistantMsg.media=(data.outputs||[]).map((x,i)=>({
+      src:x.url||x.uri||"",
+      type:capability==="video"?"video":"audio",
+      alt:`${capability==="video"?"Vídeo":"Música"} gerad${capability==="video"?"o":"a"} ${i+1}`
+    })).filter(x=>x.src);
+    assistantMsg.content=assistantMsg.media.length
+      ? `${capability==="video"?"Vídeo":"Música"} gerad${capability==="video"?"o":"a"} com ${state.modelCatalog.find(m=>m.id===modelId)?.name||modelId}.`
+      : `A geração terminou, mas o provider não retornou uma URL de ${capability==="video"?"vídeo":"áudio"}.`;
+  }catch(err){
+    assistantMsg.content=err.name==="AbortError"
+      ? "Geração interrompida."
+      : `Não consegui gerar ${capability==="video"?"o vídeo":"a música"}.\n\n\`${String(err.message||err)}\``;
+  }finally{
+    state.generating=false;state.controller=null;els.sendIcon.textContent="↑";els.send.title="Enviar";
+    contentNode.classList.remove("typing-cursor");contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    finalizeRichMessage(node);renderMessageExtras(node,assistantMsg);wireSafeLinks(node);
+    persist();renderChatList();autoRenameChat(chat).catch(console.warn);
   }
 }
 
@@ -2417,7 +2540,9 @@ async function autoRenameChat(chat) {
 
   const fallback = localAutoTitle(chat);
 
-  if (!nvidiaReady()) {
+  if (!state.modelCatalog.length) await loadModelCatalog(false);
+  const titleModel = bestModelForCapability("chat", state.model);
+  if (!titleModel) {
     chat.title = fallback;
     updateChatSlugFromTitle(chat, { force: true });
     chat.autoRenamed = true;
@@ -2443,14 +2568,14 @@ async function autoRenameChat(chat) {
       })
       .join("\n");
 
-    const res = await fetch("/api/nvidia/chat/completions", {
+    const res = await fetch("/api/inference/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         // Always use the free router. Auto-rename must never choose a paid model.
-        model: "nvidia/nemotron-3-ultra-550b-a55b",
+        model: titleModel,
         messages: [{
           role: "user",
           content: `Crie um título curto e específico para esta conversa.
@@ -3721,9 +3846,9 @@ function titleFrom(text) {
 async function sendCurrent() {
   const text = els.prompt.value.trim();
   if ((!text && !state.attachments.length) || state.generating) return;
-  if (!nvidiaReady()) {
-    openSettings();
-    els.apiKey.focus();
+  if (!state.modelCatalog.length) await loadModelCatalog(false);
+  if (!state.modelCatalog.length) {
+    showToolGuard("Nenhum provider de modelo está conectado ao Avalynx Model Router.");
     return;
   }
 
@@ -3757,6 +3882,7 @@ async function sendCurrent() {
     attachments: attachmentsMeta,
     webSearch: state.webSearchActive,
     imageRequest: state.imageModeActive,
+    mediaRequest: state.mediaModeActive ? state.mediaCapability : "",
     createdAt: Date.now()
   };
 
@@ -3774,7 +3900,9 @@ async function sendCurrent() {
   // The title is generated from the actual conversation, not copied from this message.
 
   const shouldGenerateImage = state.imageModeActive;
+  const shouldGenerateMedia = state.mediaModeActive && ["video","music"].includes(state.mediaCapability);
   const imagePrompt = text || selectedFiles[0]?.name || "Crie uma imagem.";
+  const mediaPrompt = text || selectedFiles[0]?.name || (state.mediaCapability === "video" ? "Crie um vídeo." : "Crie uma música.");
 
   els.prompt.value = "";
   autoGrow();
@@ -3797,8 +3925,14 @@ async function sendCurrent() {
   };
 
   if (shouldGenerateImage) {
+    const modelId=state.imageModel;
     clearAcceptedAttachments();
     await generateImageResponse(chat, imagePrompt);
+  } else if (shouldGenerateMedia) {
+    const capability=state.mediaCapability;
+    const modelId=state.mediaModel;
+    clearAcceptedAttachments();
+    await generateMediaResponse(chat, mediaPrompt, capability, modelId);
   } else if ((chat.mode || state.appMode) === "code") {
     clearAcceptedAttachments();
     await generateAvaCode(chat, { messageId: userMsg.id, currentApiContent: apiContent });
@@ -3948,7 +4082,7 @@ async function resolveAuthoritativeNow(modelId, signal) {
   const fallback = browserDateFallback();
 
   try {
-    const res = await fetch("/api/nvidia/chat/completions", {
+    const res = await fetch("/api/inference/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -4461,9 +4595,8 @@ async function generateAvaCode(chat,requestContext=null){
   scrollToBottom();
 
   try{
-    if(!nvidiaReady()){
-      throw new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY.");
-    }
+    if(!state.modelCatalog.length) await loadModelCatalog(false);
+    if(!state.modelCatalog.length) throw new Error("Nenhum provider de modelo está conectado ao Avalynx Model Router.");
 
     const toolData = await fetchMcpTools();
     let mcpTools = toolData.tools || [];
@@ -4520,10 +4653,17 @@ ENGINEERING
 - Identify files that should change.
 - Prefer complete, directly usable code and patches.
 - Explain verification steps.
-- The product identity is Ava Code. The primary inference model is NVIDIA Nemotron 3 Ultra through NVIDIA NIM.`
+- The product identity is Ava Code. The inference model is selected dynamically by the Avalynx Model Router from connected providers that support coding/tool workflows.`
     });
 
-    const candidates=["nvidia/nemotron-3-ultra-550b-a55b"];
+    const toolCapable=state.modelCatalog.filter(m=>m.available!==false&&modelCapabilities(m).includes("chat")&&modelCapabilities(m).includes("tools"));
+    const codeCapable=toolCapable.filter(m=>modelCapabilities(m).includes("code"));
+    const selectedPreferred=toolCapable.find(m=>m.id===state.model);
+    const candidates=[
+      selectedPreferred?.id,
+      ...codeCapable.map(m=>m.id),
+      ...toolCapable.map(m=>m.id)
+    ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,5);
     let selectedModel=null;
     let finalContent="";
     let lastError=null;
@@ -4548,7 +4688,7 @@ ENGINEERING
             requestBody.tool_choice="auto";
           }
 
-          const response=await fetch("/api/nvidia/chat/completions",{
+          const response=await fetch("/api/inference/chat",{
             method:"POST",
             headers:{"content-type":"application/json"},
             body:JSON.stringify(requestBody),
@@ -4558,15 +4698,15 @@ ENGINEERING
           const data=await response.json().catch(()=>({}));
 
           if(!response.ok){
-            const rawError = data?.error?.message || data?.error || `NVIDIA NIM ${response.status}`;
+            const rawError = data?.error?.message || data?.error || `Avalynx Router ${response.status}`;
             const errorText = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
 
             modelStep.classList.remove("running");
             modelStep.classList.add("error");
 
             if(response.status === 404 && /unknown api route|cannot post|not found/i.test(errorText)){
-              modelStep.querySelector("span:last-child").textContent="Backend Ava Code sem rota NVIDIA NIM";
-              throw new Error(`Falha de infraestrutura: /api/nvidia/chat/completions retornou 404 (${errorText}).`);
+              modelStep.querySelector("span:last-child").textContent="Backend Ava Code sem rota do Avalynx Model Router";
+              throw new Error(`Falha de infraestrutura: /api/inference/chat retornou 404 (${errorText}).`);
             }
 
             modelStep.querySelector("span:last-child").textContent=`${model} indisponível`;
@@ -4589,7 +4729,7 @@ ENGINEERING
       }
 
       if(!payload){
-        throw lastError || new Error("Nenhum modelo NVIDIA do Ava Code respondeu.");
+        throw lastError || new Error("Nenhum modelo com suporte a tools respondeu no Ava Code.");
       }
 
       const message=payload?.choices?.[0]?.message || {};
@@ -4637,7 +4777,7 @@ ENGINEERING
           }
         };
 
-        const forcedResponse=await fetch("/api/nvidia/chat/completions",{
+        const forcedResponse=await fetch("/api/inference/chat",{
           method:"POST",
           headers:{"content-type":"application/json"},
           body:JSON.stringify(forcedBody),
@@ -4715,13 +4855,14 @@ ENGINEERING
 
 async function continueLongResponse(chat,msg,model,ctx,signal){
   for(let i=0;i<6&&msg.finishReason==="length";i++){
-    const r=await fetch("/api/nvidia/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[...toApiMessages(chat,ctx).slice(0,-1),{role:"assistant",content:msg.content},{role:"user",content:"Continue exatamente de onde parou, sem repetir. Termine a resposta completa."}],stream:false,max_tokens:65536}),signal});
+    const r=await fetch("/api/inference/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[...toApiMessages(chat,ctx).slice(0,-1),{role:"assistant",content:msg.content},{role:"user",content:"Continue exatamente de onde parou, sem repetir. Termine a resposta completa."}],stream:false,max_tokens:65536}),signal});
     if(!r.ok)break;const d=await r.json().catch(()=>({})),c=d?.choices?.[0],extra=c?.message?.content||"";if(!extra)break;msg.content+=extra;msg.finishReason=c?.finish_reason||null;persist();
   }
 }
 
 
 async function maybeRunChatMcp(chat, requestContext, signal) {
+  if(!state.modelCatalog.length) await loadModelCatalog(false);
   const toolData = await fetchMcpTools().catch(() => ({tools:[]}));
   let mcpTools = toolData.tools || [];
   if (!mcpTools.length) return null;
@@ -4763,11 +4904,11 @@ async function maybeRunChatMcp(chat, requestContext, signal) {
   });
 
   for (let round=0; round<5; round++) {
-    const response = await fetch("/api/nvidia/chat/completions",{
+    const response = await fetch("/api/inference/chat",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        model:"nvidia/nemotron-3-ultra-550b-a55b",
+        model:bestToolChatModel(state.model),
         messages,
         tools:openAiTools,
         tool_choice:freshRequested && webMcpTools.length ? "required" : "auto",
@@ -4798,7 +4939,8 @@ async function generateAssistant(chat, requestContext = null) {
   state.controller = new AbortController();
   els.sendIcon.textContent = "■";
   els.send.title = "Parar";
-  const assistantMsg = { id: uid(), role:"assistant", content:"", createdAt:Date.now() };
+
+  const assistantMsg = { id:uid(), role:"assistant", content:"", createdAt:Date.now() };
   chat.messages.push(assistantMsg);
   persist();
 
@@ -4808,6 +4950,8 @@ async function generateAssistant(chat, requestContext = null) {
   scrollToBottom();
 
   try {
+    if (!state.modelCatalog.length) await loadModelCatalog(false);
+
     const mcpAnswer = await maybeRunChatMcp(chat, requestContext, state.controller.signal);
     if (mcpAnswer) {
       assistantMsg.content = mcpAnswer;
@@ -4818,170 +4962,158 @@ async function generateAssistant(chat, requestContext = null) {
     }
 
     const activeAgent = activeAgentForChat(chat);
-    const requestModel = activeAgent?.model || "nvidia/nemotron-3-ultra-550b-a55b";
-    if(!nvidiaReady()) throw Object.assign(new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY."),{status:503});
+    const requested = activeAgent?.model || state.model;
+    const requestModel = bestModelForCapability("chat", requested);
+    if (!requestModel) throw new Error("Nenhum modelo de chat está disponível no Avalynx Model Router.");
 
-    const candidateModels=["nvidia/nemotron-3-ultra-550b-a55b"];
+    const chatModels=modelsForCapability("chat");
+    const candidates=[
+      requestModel,
+      ...chatModels.filter(isFreeModel).map(m=>m.id),
+      ...chatModels.map(m=>m.id)
+    ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,5);
 
-    let res = null;
-    let selectedModel = requestModel;
-    let lastError = null;
+    let res=null;
+    let selectedModel=requestModel;
+    let lastError=null;
 
-    for (const candidateModel of candidateModels) {
-      const body = {
-        model: candidateModel,
-        messages: toApiMessages(chat, requestContext).slice(0, -1),
-        stream: true,
-        max_tokens: 65536
+    for (const candidateModel of candidates) {
+      const body={
+        model:candidateModel,
+        messages:toApiMessages(chat,requestContext).slice(0,-1),
+        stream:true,
+        max_tokens:65536
       };
 
-      const lastUserMessage = [...chat.messages].reverse().find(m => m.role === "user");
-      if (lastUserMessage?.webSearch) {
-        body.messages.splice(1,0,{role:"system",content:"The user requested fresh web information, but direct NVIDIA NIM mode does not provide the old NVIDIA NIM web-search tool. Be explicit about that limitation rather than inventing current facts."});
+      const lastUserMessage=[...chat.messages].reverse().find(m=>m.role==="user");
+      if(lastUserMessage?.webSearch){
+        body.messages.splice(1,0,{
+          role:"system",
+          content:`${freshWebSystemContext()}
+
+The user explicitly requested live web information. If no live search MCP tool was used in this turn, say that live web search was unavailable rather than inventing current facts.`
+        });
       }
 
-      const attempt = await fetch("/api/nvidia/chat/completions", {
+      const attempt=await fetch("/api/inference/chat",{
         method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-        },
-        body: JSON.stringify(body),
-        signal: state.controller.signal
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(body),
+        signal:state.controller.signal
       });
 
-      if (attempt.ok) {
-        res = attempt;
-        selectedModel = candidateModel;
-        if (requestContext?.onRequestAccepted) {
-          const callback = requestContext.onRequestAccepted;
-          requestContext.onRequestAccepted = null;
-          callback();
+      if(attempt.ok){
+        res=attempt;
+        selectedModel=candidateModel;
+        if(requestContext?.onRequestAccepted){
+          const cb=requestContext.onRequestAccepted;
+          requestContext.onRequestAccepted=null;
+          cb();
         }
         break;
       }
 
-      const raw = await attempt.text();
-      let detail = raw;
-      try {
-        const parsed = JSON.parse(raw);
-        detail = parsed?.error?.message || raw;
-      } catch {}
-
-      lastError = new Error(detail);
-      lastError.status = attempt.status;
-
-      // Authentication/payment errors affect the account itself; switching
-      // free models cannot solve them.
-      if ([401, 402, 403].includes(attempt.status)) break;
-
-      // Multimodal incompatibility is often returned as 400/422 by a specific model/provider.
-      // When attachments are present, allow the free feature-aware router to retry.
-      const hasMultimodal = multimodalRequirements(requestContext?.currentApiContent).size > 0;
-      const retryable = [400, 404, 408, 409, 422, 429, 500, 502, 503, 504];
-      if (!retryable.includes(attempt.status) || (!hasMultimodal && [400, 422].includes(attempt.status))) break;
+      const raw=await attempt.text();
+      let detail=raw;
+      try{
+        const parsed=JSON.parse(raw);
+        detail=parsed?.error?.message||parsed?.error||raw;
+      }catch{}
+      lastError=Object.assign(new Error(String(detail)),{status:attempt.status,model:candidateModel});
+      if([401,402,403].includes(attempt.status)) break;
+      if(![400,404,408,409,422,429,500,502,503,504].includes(attempt.status))break;
     }
 
-    if (!res) throw lastError || new Error("Nenhum modelo NVIDIA respondeu.");
+    if(!res) throw lastError || new Error("Nenhum provider de chat respondeu.");
 
-    if (selectedModel !== state.model) {
-      assistantMsg.fallbackModel = selectedModel;
-      console.info(`Ava I fallback: ${requestModel} → ${selectedModel}`);
-    }
-    if (!res.body) throw new Error("Este navegador não expôs o stream da resposta.");
+    assistantMsg.model=selectedModel;
+    if(selectedModel!==requestModel) assistantMsg.fallbackModel=selectedModel;
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+    const contentType=(res.headers.get("content-type")||"").toLowerCase();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, {stream:true});
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const data = JSON.parse(payload);
-          if (data.usage?.server_tool_use?.web_search_requests != null) {
-            assistantMsg.webSearchRequests = data.usage.server_tool_use.web_search_requests;
-          }
-          const choice = data.choices?.[0] || {};
-          if(choice.finish_reason) assistantMsg.finishReason=choice.finish_reason;
-          const deltaObj = choice.delta || {};
-          const annotations = deltaObj.annotations || choice.message?.annotations;
-          if (annotations) {
-            assistantMsg.annotations = normalizeAnnotations([...(assistantMsg.annotations || []), ...annotations]);
-          }
-          const delta = deltaObj.content;
-          if (typeof delta === "string") {
-            assistantMsg.content += delta;
-            contentNode.innerHTML = renderMarkdown(contentWithoutPendingWidgets(assistantMsg.content));
-            finalizeRichMessage(node);
-            wireCodeCopy(contentNode);
-            scrollToBottom(false);
-          }
-        } catch {}
+    if(contentType.includes("text/event-stream")){
+      if(!res.body)throw new Error("O navegador não expôs o stream da resposta.");
+      const reader=res.body.getReader();
+      const decoder=new TextDecoder();
+      let buffer="";
+      while(true){
+        const {done,value}=await reader.read();
+        if(done)break;
+        buffer+=decoder.decode(value,{stream:true});
+        const lines=buffer.split("\n");
+        buffer=lines.pop()||"";
+        for(const line of lines){
+          const trimmed=line.trim();
+          if(!trimmed.startsWith("data:"))continue;
+          const payload=trimmed.slice(5).trim();
+          if(!payload||payload==="[DONE]")continue;
+          try{
+            const data=JSON.parse(payload);
+            const choice=data.choices?.[0]||{};
+            if(choice.finish_reason)assistantMsg.finishReason=choice.finish_reason;
+            const deltaObj=choice.delta||{};
+            const annotations=deltaObj.annotations||choice.message?.annotations;
+            if(annotations)assistantMsg.annotations=normalizeAnnotations([...(assistantMsg.annotations||[]),...annotations]);
+            const delta=deltaObj.content;
+            if(typeof delta==="string"){
+              assistantMsg.content+=delta;
+              contentNode.innerHTML=renderMarkdown(contentWithoutPendingWidgets(assistantMsg.content));
+              finalizeRichMessage(node);
+              scrollToBottom(false);
+            }
+          }catch{}
+        }
       }
+    } else {
+      const data=await res.json().catch(()=>({}));
+      const choice=data?.choices?.[0]||{};
+      assistantMsg.content=choice?.message?.content||choice?.text||"";
+      assistantMsg.finishReason=choice?.finish_reason||null;
+      if(choice?.message?.annotations)assistantMsg.annotations=normalizeAnnotations(choice.message.annotations);
+      contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+      finalizeRichMessage(node);
     }
 
-    if (!assistantMsg.content) assistantMsg.content = "A resposta terminou sem conteúdo de texto.";
-    if(assistantMsg.finishReason==="length")await continueLongResponse(chat,assistantMsg,selectedModel,requestContext,state.controller.signal);
-  } catch (err) {
-    if (err.name === "AbortError") {
-      if (!assistantMsg.content) assistantMsg.content = "Geração interrompida.";
-    } else if (err.status === 402) {
-      assistantMsg.content = `## Ava I está sem créditos
+    if(!assistantMsg.content)assistantMsg.content="A resposta terminou sem conteúdo de texto.";
+    if(assistantMsg.finishReason==="length"){
+      await continueLongResponse(chat,assistantMsg,selectedModel,requestContext,state.controller.signal);
+    }
+  } catch(err) {
+    if(err.name==="AbortError"){
+      if(!assistantMsg.content)assistantMsg.content="Geração interrompida.";
+    } else if(err.status===429){
+      assistantMsg.content=`## Limite temporário do provider
 
-A NVIDIA NIM recusou esta geração porque a chave atual não possui créditos suficientes.
+O provider do modelo selecionado retornou rate limit. A Ava tentou os fallbacks disponíveis no Avalynx Model Router.
 
-**O que fazer:** adicione créditos à sua conta NVIDIA NIM ou escolha um modelo mais econômico nas configurações.
+\`${String(err.message||err)}\``;
+    } else if([401,403].includes(Number(err.status))){
+      assistantMsg.content=`## Provider não autorizado
 
-Ava I usa um teto alto de saída e continua automaticamente quando o modelo encerra por limite de comprimento. O limite físico final ainda depende do modelo/provedor.`;
-    } else if (err.status === 401) {
-      assistantMsg.content = `## Chave NVIDIA inválida
+A credencial do provider foi recusada pelo backend.
 
-Confira a API key em **Configurações** e tente novamente. A chave não deve ter espaços extras.`;
-    } else if (err.status === 429) {
-      assistantMsg.content = `## Limite temporário atingido
-
-A NVIDIA NIM está aplicando rate limit nesta chave ou modelo. Tente novamente depois ou selecione outro modelo.`;
-    } else if (
-      multimodalRequirements(requestContext?.currentApiContent).size > 0
-      && [400, 413, 415, 422].includes(Number(err.status))
-    ) {
-      assistantMsg.content = `## Não consegui enviar os anexos
-
-A NVIDIA NIM recusou o payload multimodal antes de a Ava analisar os arquivos.
-
-**Erro:** ${err.status || "—"} · ${String(err.message || err)}
-
-Os anexos continuam no composer para você poder tentar novamente.`;
+\`${String(err.message||err)}\``;
     } else {
-      assistantMsg.content = `Não consegui completar a resposta.
+      assistantMsg.content=`Não consegui completar a resposta.
 
-\`NVIDIA NIM ${err.status || "erro"}: ${String(err.message || err)}\``;
+\`Avalynx Model Router ${err.status||"erro"}: ${String(err.message||err)}\``;
     }
   } finally {
-    state.generating = false;
-    state.controller = null;
-    els.sendIcon.textContent = "↑";
-    els.send.title = "Enviar";
+    state.generating=false;
+    state.controller=null;
+    els.sendIcon.textContent="↑";
+    els.send.title="Enviar";
     contentNode.classList.remove("typing-cursor");
-    const lastUserForWebCheck = [...chat.messages].reverse().find(m => m.role === "user");
-    if (lastUserForWebCheck?.webSearch && !(assistantMsg.annotations || []).length) {
-      const dateLabel = assistantMsg.authoritativeDate
-        ? assistantMsg.authoritativeDate.split("-").reverse().join("/")
-        : "a data atual";
-      assistantMsg.content = `⚠️ A pesquisa web foi solicitada para ${dateLabel}, mas a resposta não trouxe fontes citáveis. Não trate esta resposta como informação atual confirmada.\n\n${assistantMsg.content}`;
+
+    const lastUserForWebCheck=[...chat.messages].reverse().find(m=>m.role==="user");
+    if(lastUserForWebCheck?.webSearch&&!(assistantMsg.annotations||[]).length){
+      assistantMsg.content=`⚠️ A pesquisa web foi solicitada, mas esta resposta não trouxe fontes citáveis. Não trate informações atuais como confirmadas sem uma ferramenta de busca conectada.\n\n${assistantMsg.content}`;
     }
+
     extractRichWidgets(assistantMsg);
-    contentNode.innerHTML = renderMarkdown(assistantMsg.content);
-    wireCodeCopy(contentNode);
-    renderMessageExtras(node, assistantMsg);
+    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    finalizeRichMessage(node);
+    renderMessageExtras(node,assistantMsg);
     wireSafeLinks(node);
     persist();
     renderChatList();
@@ -5247,11 +5379,28 @@ els.webToolBtn.onclick = () => {
     return;
   }
   state.webSearchActive = !state.webSearchActive;
-  if (state.webSearchActive) state.imageModeActive = false;
+  if (state.webSearchActive) { state.imageModeActive = false; state.mediaModeActive = false; }
   updateToolUI();
 };
 
 els.imageToolBtn.onclick = () => openImageStudio();
+els.videoToolBtn.onclick = () => openMediaStudio("video");
+els.musicToolBtn.onclick = () => openMediaStudio("music");
+els.closeMediaStudio.onclick = () => els.mediaStudio.close();
+els.cancelMediaModeBtn.onclick = () => {
+  state.mediaModeActive=false;state.mediaCapability="";state.mediaModel="";
+  updateToolUI();els.mediaStudio.close();
+};
+els.activateMediaModeBtn.onclick = () => {
+  const selected=els.mediaModelSelect.value;
+  if(!selected){els.mediaStudioStatus.textContent="Escolha um modelo.";return;}
+  state.mediaModel=selected;
+  state.mediaModeActive=true;
+  state.imageModeActive=false;
+  state.webSearchActive=false;
+  persist();updateToolUI();els.mediaStudio.close();els.prompt.focus();
+};
+els.mediaModelSelect.addEventListener("change",()=>{state.mediaModel=els.mediaModelSelect.value;});
 els.closeImageStudio.onclick = () => els.imageStudio.close();
 els.cancelImageModeBtn.onclick = () => {
   state.imageModeActive = false;
@@ -5269,6 +5418,7 @@ els.activateImageModeBtn.onclick = () => {
   state.imageQuality = els.imageQuality.value;
   state.imageCount = Math.min(4, Math.max(1, Number(els.imageCount.value || 1)));
   state.imageModeActive = true;
+  state.mediaModeActive = false;
   state.webSearchActive = false;
   persist();
   updateToolUI();

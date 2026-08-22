@@ -19,7 +19,7 @@ Fixes `ReferenceError: NVIDIA_CHAT_MODEL is not defined`.
 The Nemotron model identifier is now declared once at global scope, and critical inference requests also use the explicit model ID:
 `nvidia/nemotron-3-ultra-550b-a55b`
 
-No OpenRouter chat fallback is restored.
+No legacy aggregator fallback is restored.
 
 ## v6.5.5 — Literal Nemotron model ID
 
@@ -47,3 +47,40 @@ Also filters repeated stray `svg svg svg` text artifacts from rendered assistant
 - Freshness-sensitive requests such as "hoje", "agora", "latest" and "this year" trigger live-search behavior.
 - If a compatible MCP search/browse tool is connected, Ava restricts the tool set to web/search tools and requires a tool call.
 - If no live search tool is available, Ava says so instead of pretending stale model knowledge is current.
+
+
+## v6.7 — Avalynx Model Router
+
+Ava no longer treats one inference provider as the entire model universe.
+
+The backend now exposes a unified dynamic catalog:
+
+- `GET /api/models`
+- `GET /api/providers`
+- `POST /api/inference/chat`
+- `POST /api/inference/image`
+- `POST /api/inference/video`
+- `POST /api/inference/music`
+- `POST /api/inference/audio`
+
+Built-in direct provider discovery supports:
+
+- NVIDIA NIM
+- Google Gemini / AI Studio
+- Hugging Face catalog
+- Replicate
+- ElevenLabs
+- fal.ai models configured through `FAL_MODELS_JSON`
+- additional providers through `AVA_MODEL_PROVIDERS_JSON`
+- models that cannot be enumerated through `AVA_MODEL_CATALOG_JSON`
+
+The Model Hub is now capability-aware with Chat, Code, Image, Video, Music, Audio,
+Embeddings, Reasoning and Tools filters.
+
+Chat uses the selected compatible model and can fall back across directly-connected
+providers. Ava Code chooses a connected tool-capable model. Image, video and music
+generation route through capability-specific backend endpoints.
+
+The catalog only exposes models discovered from or explicitly configured for providers
+that the deployment can access. A provider's presence in the catalog does not imply
+that its upstream usage is free; billing and quotas remain controlled by that provider.
