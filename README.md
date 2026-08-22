@@ -661,3 +661,6 @@ Fixes errors observed in production:
 - safer auto titles
 - Markdown formatting inside native tables
 - 65,536-token requested output ceiling plus automatic continuation when finish_reason is length (subject to provider/model hard limits)
+
+## v6.5 — NVIDIA NIM
+Ava Chat and Ava Code use NVIDIA NIM directly. Primary: `nvidia/nemotron-3-ultra-550b-a55b`. Fallback: `meta/llama-4-maverick-17b-128e-instruct`. Configure `NVIDIA_API_KEY` server-side.

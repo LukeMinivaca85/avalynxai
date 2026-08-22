@@ -1551,6 +1551,11 @@ function deleteEditingAgent() {
 }
 
 
+function nvidiaReady(){return state.serverConfig?.nvidia===true;}
+const NVIDIA_CHAT_MODEL="nvidia/nemotron-3-ultra-550b-a55b";
+const NVIDIA_CHAT_FALLBACK="meta/llama-4-maverick-17b-128e-instruct";
+const NVIDIA_CODE_MODEL=NVIDIA_CHAT_MODEL;
+
 function openRouterReady() {
   return !!state.serverConfig?.openrouter || !!state.apiKey;
 }
@@ -1583,6 +1588,7 @@ async function loadServerConfig() {
     state.serverConfig = {
       loaded: true,
       openrouter: !!data.openrouter,
+      nvidia: !!data.nvidia,
       elevenlabs: !!data.elevenlabs,
       deployment: data.deployment || "server"
     };
@@ -2304,7 +2310,7 @@ async function autoRenameChat(chat) {
 
   const fallback = localAutoTitle(chat);
 
-  if (!openRouterReady()) {
+  if (!nvidiaReady()) {
     chat.title = fallback;
     updateChatSlugFromTitle(chat, { force: true });
     chat.autoRenamed = true;
@@ -2330,14 +2336,14 @@ async function autoRenameChat(chat) {
       })
       .join("\n");
 
-    const res = await fetch("/api/openrouter/chat/completions", {
+    const res = await fetch("/api/nvidia/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         // Always use the free router. Auto-rename must never choose a paid model.
-        model: "openrouter/free",
+        model: NVIDIA_CHAT_FALLBACK,
         messages: [{
           role: "user",
           content: `Crie um título curto e específico para esta conversa.
@@ -4137,7 +4143,7 @@ async function renderMcpRegistry() {
 }
 
 
-const AVA_CODE_MODEL_LABEL = "Qwen3 Coder · OpenRouter";
+const AVA_CODE_MODEL_LABEL = "NVIDIA Nemotron 3 Ultra · NIM";
 function syncAvaModeUI(){
   const code=state.appMode==="code";
   document.body.classList.toggle("ava-code-mode",code);
@@ -4249,8 +4255,8 @@ async function generateAvaCode(chat,requestContext=null){
   scrollToBottom();
 
   try{
-    if(!openRouterReady()){
-      throw new Error("OpenRouter não está configurado no servidor.");
+    if(!nvidiaReady()){
+      throw new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY.");
     }
 
     const toolData = await fetchMcpTools();
@@ -4308,10 +4314,10 @@ ENGINEERING
 - Identify files that should change.
 - Prefer complete, directly usable code and patches.
 - Explain verification steps.
-- The product identity is Ava Code. The underlying inference model is Qwen3 Coder when available through OpenRouter.`
+- The product identity is Ava Code. The primary inference model is NVIDIA Nemotron 3 Ultra through NVIDIA NIM.`
     });
 
-    const candidates=["qwen/qwen3-coder:free","openrouter/free"];
+    const candidates=[NVIDIA_CODE_MODEL,NVIDIA_CHAT_FALLBACK];
     let selectedModel=null;
     let finalContent="";
     let lastError=null;
@@ -4336,7 +4342,7 @@ ENGINEERING
             requestBody.tool_choice="auto";
           }
 
-          const response=await fetch("/api/openrouter/chat/completions",{
+          const response=await fetch("/api/nvidia/chat/completions",{
             method:"POST",
             headers:{"content-type":"application/json"},
             body:JSON.stringify(requestBody),
@@ -4346,15 +4352,15 @@ ENGINEERING
           const data=await response.json().catch(()=>({}));
 
           if(!response.ok){
-            const rawError = data?.error?.message || data?.error || `OpenRouter ${response.status}`;
+            const rawError = data?.error?.message || data?.error || `NVIDIA NIM ${response.status}`;
             const errorText = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
 
             modelStep.classList.remove("running");
             modelStep.classList.add("error");
 
             if(response.status === 404 && /unknown api route|cannot post|not found/i.test(errorText)){
-              modelStep.querySelector("span:last-child").textContent="Backend Ava Code sem rota OpenRouter";
-              throw new Error(`Falha de infraestrutura: /api/openrouter/chat/completions retornou 404 (${errorText}).`);
+              modelStep.querySelector("span:last-child").textContent="Backend Ava Code sem rota NVIDIA NIM";
+              throw new Error(`Falha de infraestrutura: /api/nvidia/chat/completions retornou 404 (${errorText}).`);
             }
 
             modelStep.querySelector("span:last-child").textContent=`${model} indisponível`;
@@ -4377,7 +4383,7 @@ ENGINEERING
       }
 
       if(!payload){
-        throw lastError || new Error("Nenhum modelo gratuito do Ava Code ficou disponível.");
+        throw lastError || new Error("Nenhum modelo NVIDIA do Ava Code respondeu.");
       }
 
       const message=payload?.choices?.[0]?.message || {};
@@ -4425,7 +4431,7 @@ ENGINEERING
           }
         };
 
-        const forcedResponse=await fetch("/api/openrouter/chat/completions",{
+        const forcedResponse=await fetch("/api/nvidia/chat/completions",{
           method:"POST",
           headers:{"content-type":"application/json"},
           body:JSON.stringify(forcedBody),
@@ -4476,7 +4482,7 @@ ENGINEERING
     thinking.querySelector("span:last-child").textContent="Ava Code concluiu";
 
     assistantMsg.content=finalContent;
-    assistantMsg.model=selectedModel || "qwen/qwen3-coder:free";
+    assistantMsg.model=selectedModel || NVIDIA_CODE_MODEL;
 
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
@@ -4503,7 +4509,7 @@ ENGINEERING
 
 async function continueLongResponse(chat,msg,model,ctx,signal){
   for(let i=0;i<6&&msg.finishReason==="length";i++){
-    const r=await fetch("/api/openrouter/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[...toApiMessages(chat,ctx).slice(0,-1),{role:"assistant",content:msg.content},{role:"user",content:"Continue exatamente de onde parou, sem repetir. Termine a resposta completa."}],stream:false,max_tokens:65536}),signal});
+    const r=await fetch("/api/nvidia/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[...toApiMessages(chat,ctx).slice(0,-1),{role:"assistant",content:msg.content},{role:"user",content:"Continue exatamente de onde parou, sem repetir. Termine a resposta completa."}],stream:false,max_tokens:65536}),signal});
     if(!r.ok)break;const d=await r.json().catch(()=>({})),c=d?.choices?.[0],extra=c?.message?.content||"";if(!extra)break;msg.content+=extra;msg.finishReason=c?.finish_reason||null;persist();
   }
 }
@@ -4524,16 +4530,10 @@ async function generateAssistant(chat, requestContext = null) {
 
   try {
     const activeAgent = activeAgentForChat(chat);
-    const requestModel = activeAgent?.model || state.model;
-    const selectedMeta = state.modelCatalog.find(m => m.id === requestModel);
-    if (selectedMeta && !isFreeModel(selectedMeta) && !state.allowPaidModels) {
-      throw Object.assign(new Error("Modelo pago bloqueado pela proteção contra cobrança. Abra o AI Model Hub e escolha um modelo grátis, ou ative “Permitir pagos” manualmente."), { status: 402 });
-    }
+    const requestModel = activeAgent?.model || NVIDIA_CHAT_MODEL;
+    if(!nvidiaReady()) throw Object.assign(new Error("NVIDIA NIM não está configurada no servidor. Adicione NVIDIA_API_KEY."),{status:503});
 
-    const candidateModels = candidateModelsForRequest(
-      requestContext?.currentApiContent,
-      requestModel
-    );
+    const candidateModels=[requestModel,NVIDIA_CHAT_MODEL,NVIDIA_CHAT_FALLBACK].filter((m,i,a)=>m&&a.indexOf(m)===i);
 
     let res = null;
     let selectedModel = requestModel;
@@ -4549,59 +4549,10 @@ async function generateAssistant(chat, requestContext = null) {
 
       const lastUserMessage = [...chat.messages].reverse().find(m => m.role === "user");
       if (lastUserMessage?.webSearch) {
-        if (!state.allowPaidTools) {
-          throw Object.assign(new Error("Busca web bloqueada para evitar cobrança surpresa. Ative “Permitir ferramentas com custo” nas Configurações."), { status: 402 });
-        }
-
-        const userTextForFreshness =
-          textFromApiContent(requestContext?.currentApiContent)
-          || (typeof lastUserMessage.apiContent === "string"
-            ? lastUserMessage.apiContent
-            : lastUserMessage.content);
-
-        // Resolve "now" from OpenRouter's dedicated datetime server tool first.
-        // This prevents the language model from falling back to an outdated training-year assumption.
-        const authoritativeNow = await resolveAuthoritativeNow(candidateModel, state.controller.signal);
-        assistantMsg.authoritativeDate = authoritativeNow.date;
-        assistantMsg.authoritativeDatetimeSource = authoritativeNow.source;
-
-        // Force a real search instead of merely offering the tool to the model.
-        body.tool_choice = "required";
-        body.tools = [{
-          type: "openrouter:web_search",
-          parameters: {
-            engine: "auto",
-            max_results: webRequestNeedsFreshness(userTextForFreshness) ? 8 : 5,
-            max_total_results: webRequestNeedsFreshness(userTextForFreshness) ? 12 : 10,
-            max_uses: 2,
-            search_context_size: webRequestNeedsFreshness(userTextForFreshness) ? "high" : "medium",
-            user_location: {
-              type: "approximate",
-              country: "BR",
-              timezone: "America/Sao_Paulo"
-            }
-          }
-        }];
-        body.max_tool_calls = 4;
-
-        // Add an ephemeral freshness instruction only for this request.
-        body.messages.splice(1, 0, {
-          role: "system",
-          content: freshWebInstruction(authoritativeNow)
-        });
+        body.messages.splice(1,0,{role:"system",content:"The user requested fresh web information, but direct NVIDIA NIM mode does not provide the old OpenRouter web-search tool. Be explicit about that limitation rather than inventing current facts."});
       }
 
-      // GPT-5.6 Sol supports the special Pro mode. Other reasoning-capable
-      // models use reasoning effort, which is more portable across providers.
-      if (candidateModel.includes("gpt-5.6-sol") && state.reasoning === "pro") {
-        body.reasoning = { mode: "pro" };
-      } else if (state.reasoning !== "none" && state.reasoning !== "pro") {
-        body.reasoning = { effort: state.reasoning };
-      } else if (candidateModel === DEFAULT_MODEL) {
-        body.reasoning = { effort: "high" };
-      }
-
-      const attempt = await fetch("/api/openrouter/chat/completions", {
+      const attempt = await fetch("/api/nvidia/chat/completions", {
         method:"POST",
         headers:{
           "Content-Type":"application/json",
@@ -4642,7 +4593,7 @@ async function generateAssistant(chat, requestContext = null) {
       if (!retryable.includes(attempt.status) || (!hasMultimodal && [400, 422].includes(attempt.status))) break;
     }
 
-    if (!res) throw lastError || new Error("Nenhum modelo gratuito respondeu.");
+    if (!res) throw lastError || new Error("Nenhum modelo NVIDIA respondeu.");
 
     if (selectedModel !== state.model) {
       assistantMsg.fallbackModel = selectedModel;
@@ -4703,13 +4654,13 @@ A OpenRouter recusou esta geração porque a chave atual não possui créditos s
 
 Ava I usa um teto alto de saída e continua automaticamente quando o modelo encerra por limite de comprimento. O limite físico final ainda depende do modelo/provedor.`;
     } else if (err.status === 401) {
-      assistantMsg.content = `## Chave OpenRouter inválida
+      assistantMsg.content = `## Chave NVIDIA inválida
 
 Confira a API key em **Configurações** e tente novamente. A chave não deve ter espaços extras.`;
     } else if (err.status === 429) {
       assistantMsg.content = `## Limite temporário atingido
 
-A OpenRouter está aplicando rate limit nesta chave ou modelo. Tente novamente depois ou selecione outro modelo.`;
+A NVIDIA NIM está aplicando rate limit nesta chave ou modelo. Tente novamente depois ou selecione outro modelo.`;
     } else if (
       multimodalRequirements(requestContext?.currentApiContent).size > 0
       && [400, 413, 415, 422].includes(Number(err.status))
@@ -4724,7 +4675,7 @@ Os anexos continuam no composer para você poder tentar novamente.`;
     } else {
       assistantMsg.content = `Não consegui completar a resposta.
 
-\`OpenRouter ${err.status || "erro"}: ${String(err.message || err)}\``;
+\`NVIDIA NIM ${err.status || "erro"}: ${String(err.message || err)}\``;
     }
   } finally {
     state.generating = false;

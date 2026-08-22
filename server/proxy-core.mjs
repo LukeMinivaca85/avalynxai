@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 
 const OPENROUTER = "https://openrouter.ai/api/v1";
 const ELEVEN = "https://api.elevenlabs.io";
+const NVIDIA = "https://integrate.api.nvidia.com/v1";
 
 function env(name) {
   return process.env[name] || "";
@@ -16,6 +17,7 @@ export function deploymentName() {
 export function publicConfig() {
   return {
     openrouter: Boolean(env("OPENROUTER_API_KEY")),
+    nvidia: Boolean(env("NVIDIA_API_KEY")),
     elevenlabs: Boolean(env("ELEVENLABS_API_KEY")),
     deployment: deploymentName()
   };
@@ -23,6 +25,7 @@ export function publicConfig() {
 
 function providerForPath(pathname) {
   if (pathname.startsWith("openrouter/")) return "openrouter";
+  if (pathname.startsWith("nvidia/")) return "nvidia";
   if (pathname.startsWith("eleven/")) return "eleven";
   return null;
 }
@@ -33,6 +36,8 @@ function upstreamFor(pathname, search = "") {
   if (pathname === "openrouter/images/models") return `${OPENROUTER}/images/models${search}`;
   if (pathname === "openrouter/images") return `${OPENROUTER}/images${search}`;
   if (pathname === "openrouter/chat/completions") return `${OPENROUTER}/chat/completions${search}`;
+  if (pathname === "nvidia/chat/completions") return `${NVIDIA}/chat/completions${search}`;
+  if (pathname === "nvidia/models") return `${NVIDIA}/models${search}`;
 
   if (pathname === "eleven/voices") return `${ELEVEN}/v2/voices${search}`;
   if (pathname === "eleven/stt") return `${ELEVEN}/v1/speech-to-text${search}`;
@@ -69,6 +74,7 @@ export async function proxyRequest({ pathname, search = "", method, headers, bod
   }
 
   const openrouterKey = env("OPENROUTER_API_KEY");
+  const nvidiaKey = env("NVIDIA_API_KEY");
   const elevenKey = env("ELEVENLABS_API_KEY");
 
   if (provider === "openrouter" && !openrouterKey) {
@@ -78,6 +84,8 @@ export async function proxyRequest({ pathname, search = "", method, headers, bod
       body: Buffer.from(JSON.stringify({ error: "OPENROUTER_API_KEY is not configured on the server." }))
     };
   }
+
+  if (provider === "nvidia" && !nvidiaKey) { return {status:503,headers:{"content-type":"application/json"},body:Buffer.from(JSON.stringify({error:"NVIDIA_API_KEY is not configured on the server."}))}; }
 
   if (provider === "eleven" && !elevenKey) {
     return {
@@ -99,6 +107,8 @@ export async function proxyRequest({ pathname, search = "", method, headers, bod
     outgoingHeaders.set("authorization", `Bearer ${openrouterKey}`);
     outgoingHeaders.set("http-referer", env("AVA_PUBLIC_URL") || "https://ava-i.app");
     outgoingHeaders.set("x-openrouter-title", env("OPENROUTER_APP_NAME") || "Ava I");
+  } else if (provider === "nvidia") {
+    outgoingHeaders.set("authorization", `Bearer ${nvidiaKey}`);
   } else {
     outgoingHeaders.set("xi-api-key", elevenKey);
   }
@@ -110,7 +120,7 @@ export async function proxyRequest({ pathname, search = "", method, headers, bod
     redirect: "follow"
   };
 
-  const retryable = pathname === "openrouter/chat/completions";
+  const retryable = pathname === "openrouter/chat/completions" || pathname === "nvidia/chat/completions";
   const maxAttempts = retryable ? 3 : 1;
 
   let response = null;
