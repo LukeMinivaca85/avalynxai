@@ -159,3 +159,37 @@ Codex failures now expose structured diagnostics instead of a bare HTTP 502.
 `POST /api/code/run` failures include exitCode, classified cause (`auth`, `sandbox`, `path`, `timeout`, `quota`, `runtime`), sanitized stderr/stdout, and command metadata.
 
 Ava Code renders these details directly in the conversation. Common API-key patterns are redacted before diagnostics are returned.
+
+## v6.8.2 — Context-aware safety layer
+
+- Keyword mentions alone do not trigger the support card.
+- Tests, quotations, hypothetical examples, definitions and academic discussion are treated as contextual mentions.
+- Genuine first-person self-harm/suicide intent can display a support card.
+- Brazilian locale support uses CVV 188 and the official CVV web chat.
+- Trusted contacts are optional, local-only, and never contacted automatically.
+
+
+## v6.8.3 — NVIDIA Model Router fix
+
+Fixes a critical NVIDIA model-ID routing bug.
+
+Previously, a discovered NVIDIA model such as:
+`nvidia/nemotron-3-ultra-550b-a55b`
+
+could reach the upstream request as:
+`nemotron-3-ultra-550b-a55b`
+
+because the generic provider mapper removed the first path segment.
+
+The NVIDIA adapter now preserves the exact upstream model ID returned by `/v1/models`.
+Discovery also always retains the explicitly configured `NVIDIA_MODEL`, even if the model-list request temporarily fails.
+
+New environment overrides:
+- `NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1`
+- `NVIDIA_CHAT_PATH=/chat/completions`
+- `NVIDIA_MODEL=nvidia/nemotron-3-ultra-550b-a55b`
+
+New diagnostic endpoint:
+`GET /api/inference/nvidia-test`
+
+It makes a tiny real chat request and reports the upstream status/model without exposing the API key.

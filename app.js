@@ -323,6 +323,15 @@ Never invent.
 - The Ava runtime supplies the real current date/time on every request.
 - For current/changing facts, use live web search when available.
 - Never fake freshness from model memory.
+
+
+SAFETY CONTEXT RULES
+- Do not treat a keyword alone as proof of immediate danger.
+- Distinguish real first-person intent from quotations, hypothetical examples, product testing, fiction, schoolwork, definitions, and discussion of another person.
+- If the user is clearly testing the safety system or quoting a phrase, answer the actual test/question without pretending the quoted scenario is happening.
+- For genuine first-person self-harm or suicide intent, respond supportively and prioritize immediate safety.
+- Never claim Avalynx contacted a parent, trusted contact, emergency service, or anyone else unless an explicit user-authorized action actually occurred.
+- Trusted-contact outreach is always opt-in. Never send a message automatically.
 `;
 
 const DEFAULT_MODEL_VERSION = 4;
@@ -1343,6 +1352,17 @@ function renderMediaGenerationCard(msg){
   return card;
 }
 
+
+const AVA_SAFETY_RESOURCES={BR:{name:"CVV - Centro de Valorização da Vida",phoneLabel:"188",phoneHref:"tel:+55188",chatLabel:"Chat ao vivo",chatHref:"https://www.cvv.org.br/chat/"}};
+function safetyLocale(){const lang=String(navigator.language||"pt-BR").toLowerCase();return lang.startsWith("pt-br")?"BR":"";}
+function normalizeSafetyText(v){return String(v||"").normalize("NFKC").toLowerCase().replace(/\s+/g," ").trim();}
+function looksLikeSafetyTestOrQuote(text){const t=normalizeSafetyText(text);return [/\b(estou testando|só testando|apenas testando|é um teste|teste do sistema|teste da ava|teste de segurança)\b/i,/\b(hipoteticamente|hipótese|exemplo|exemplo fictício|frase fictícia|cenário fictício)\b/i,/\b(o que acontece se eu falar|se alguém disser|se uma pessoa disser|como a ava deveria responder)\b/i,/\b(citação|citando|texto citado|personagem|roteiro|história|redação|trabalho escolar|pesquisa acadêmica)\b/i,/\b(definição|o que significa|explique o que é|qual o significado)\b/i].some(rx=>rx.test(t));}
+function evaluateSafetyContext(value){const t=normalizeSafetyText(value);if(!t)return{level:"none",reason:"empty"};const term=/(automutil|autoagress|me cortar|me machucar|tirar minha vida|me matar|suicid|não quero viver|acabar com minha vida)/i.test(t);if(!term)return{level:"none",reason:"no-safety-term"};if(looksLikeSafetyTestOrQuote(t))return{level:"contextual",reason:"test-or-quote"};const first=/(eu |eu$|me |minha |meu |vou |quero |estou |tô |pretendo )/i.test(t);const immediate=/(agora|hoje|neste momento|já|daqui a pouco|vou fazer|quero fazer|pretendo fazer|não aguento mais)/i.test(t);const explicit=/(vou me (?:matar|machucar|cortar)|quero me (?:matar|machucar|cortar)|pretendo me (?:matar|machucar|cortar)|vou tirar minha vida)/i.test(t);if(explicit||(first&&immediate))return{level:"high",reason:"first-person-immediate"};if(first)return{level:"support",reason:"first-person"};return{level:"contextual",reason:"mention-only"};}
+function safetyTrustedContact(){try{const raw=JSON.parse(localStorage.getItem("ava-trusted-contact")||"null");if(raw&&typeof raw.email==="string"&&raw.email.includes("@"))return{name:String(raw.name||"Pessoa de confiança"),email:raw.email};}catch{}return null;}
+function setSafetyTrustedContact(name,email){const e=String(email||"").trim();if(!e){localStorage.removeItem("ava-trusted-contact");return;}localStorage.setItem("ava-trusted-contact",JSON.stringify({name:String(name||"Pessoa de confiança").trim(),email:e}));}
+function renderSafetySupportCard(container,assessment){if(!container||!["high","support"].includes(assessment?.level)||container.querySelector(".ava-safety-card"))return;const resource=AVA_SAFETY_RESOURCES[safetyLocale()];const trusted=safetyTrustedContact();const card=document.createElement("section");card.className="ava-safety-card";card.setAttribute("role","note");const resourceHtml=resource?`<div class="ava-safety-resource"><strong>Você pode encontrar ajuda</strong><p>Se estiver com pensamentos de autoagressão ou suicídio, você pode falar com ${escapeHtml(resource.name)}.</p><div class="ava-safety-actions"><a href="${resource.phoneHref}" class="ava-safety-btn primary">${escapeHtml(resource.phoneLabel)}</a><a href="${resource.chatHref}" target="_blank" rel="noopener noreferrer" class="ava-safety-btn">${escapeHtml(resource.chatLabel)}</a></div></div>`:"";const trustedHtml=trusted?`<div class="ava-safety-trusted"><strong>Pessoa de confiança</strong><p>${escapeHtml(trusted.name)} está configurado(a) para apoio extra. A Avalynx nunca envia nada automaticamente.</p><a class="ava-safety-btn" href="mailto:${encodeURIComponent(trusted.email)}?subject=${encodeURIComponent("Podemos conversar?")}">Escrever uma mensagem</a></div>`:"";card.innerHTML=`<div class="ava-safety-card-head"><div class="ava-safety-mark">♡</div><div><strong>Apoio disponível</strong><span>Você decide o que fazer a seguir.</span></div></div>${resourceHtml}${trustedHtml}<div class="ava-safety-privacy">A Avalynx não contata ninguém automaticamente.</div>`;container.appendChild(card);wireSafeLinks(card);}
+function maybeRenderSafetyForUserMessage(node,msg){if(!node||msg?.role!=="user")return;const a=evaluateSafetyContext(msg.content||"");msg.safetyAssessment=a;if(["high","support"].includes(a.level))renderSafetySupportCard(node.querySelector(".message-body")||node,a);}
+
 function renderMessageExtras(node, msg) {
   const body=node.querySelector(".message-body");
   body.querySelector(".ava-widgets")?.remove();
@@ -2254,6 +2274,7 @@ function appendMessageElement(msg, streaming = false) {
 
   els.messages.appendChild(node);
   finalizeRichMessage(node);
+  maybeRenderSafetyForUserMessage(node,msg);
   return node;
 }
 
@@ -4661,7 +4682,7 @@ function syncAvaModeUI(){
     els.prompt.placeholder="Descreva uma tarefa de programação para o Ava Code";
     const h=document.querySelector("#emptyState h1"),p=document.querySelector("#emptyState p");
     if(h)h.textContent="O que vamos construir?";
-    if(p)p.textContent="Ava Code entende projetos, propõe alterações e trabalha como um agente de programação usando Qwen3 Coder pelo NVIDIA NIM.";
+    if(p)p.textContent="Ava Code entende projetos, propõe alterações e trabalha como um agente de programação usando Qwen Coder via Hugging Face, com fallbacks do Avalynx Model Router.";
   }else{
     els.modelLabel.textContent=state.modelLabel||DEFAULT_MODEL_LABEL;
     els.prompt.placeholder="Mensagem para a Ava I";
@@ -4785,6 +4806,16 @@ async function publishCodexFiles(files=[]) {
   return published;
 }
 
+
+
+async function debugNvidiaProvider(){
+  try{
+    const res=await fetch("/api/inference/nvidia-test",{headers:{accept:"application/json"}});
+    return await res.json();
+  }catch(error){
+    return {ok:false,error:String(error?.message||error)};
+  }
+}
 
 async function debugCodexStatus(){
   try{
@@ -5490,6 +5521,7 @@ function editMessage(messageId) {
 
 function openSettings() {
   syncSettingsUI();
+  syncTrustedContactSettings();
   els.settings.showModal();
 }
 
@@ -5710,7 +5742,7 @@ els.webToolBtn.onclick = () => {
     return;
   }
   if (!state.allowPaidTools) {
-    showToolGuard("A busca web da NVIDIA NIM pode consumir créditos. Ative “Permitir ferramentas com custo” nas Configurações.");
+    showToolGuard("A pesquisa web pode consumir cota do provider conectado.");
     openSettings();
     return;
   }
@@ -6015,9 +6047,14 @@ function setupTechnicalSecretInputs() {
   });
 }
 
+
+function syncTrustedContactSettings(){const saved=safetyTrustedContact();const name=document.querySelector("#trustedContactNameInput"),email=document.querySelector("#trustedContactEmailInput");if(name)name.value=saved?.name||"";if(email)email.value=saved?.email||"";}
+function setupTrustedContactSettings(){const save=document.querySelector("#saveTrustedContactBtn"),clear=document.querySelector("#clearTrustedContactBtn");if(save)save.onclick=()=>{const name=document.querySelector("#trustedContactNameInput")?.value||"Pessoa de confiança";const email=document.querySelector("#trustedContactEmailInput")?.value||"";if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){showToolGuard("Digite um e-mail válido para a pessoa de confiança.");return;}setSafetyTrustedContact(name,email);showToolGuard(email?"Pessoa de confiança salva neste aparelho.":"Pessoa de confiança removida.");};if(clear)clear.onclick=()=>{setSafetyTrustedContact("","");syncTrustedContactSettings();showToolGuard("Pessoa de confiança removida.");};syncTrustedContactSettings();}
+
 async function bootstrapAva() {
   setupIOSPWA();
   setupTechnicalSecretInputs();
+  setupTrustedContactSettings();
   loadState();
 
   const routed = activateChatFromURL();

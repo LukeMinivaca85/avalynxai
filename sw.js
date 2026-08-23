@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.8.1-codex-debug";
+const CACHE = "ava-i-shell-v6.8.3-nvidia-router-fix";
 const ASSETS = [
   "/",
   "/index.html",
