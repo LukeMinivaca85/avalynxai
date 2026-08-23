@@ -67,18 +67,87 @@ async function fetchJson(url, options={}, timeoutMs=12000){
 }
 
 async function discoverNvidia(){
-  const key=env("NVIDIA_API_KEY"); if(!key)return {provider:null,models:[]};
+  const key=env("NVIDIA_API_KEY");
+  if(!key)return {provider:null,models:[]};
+
+  const base=(env("NVIDIA_BASE_URL")||"https://integrate.api.nvidia.com/v1").replace(/\/$/,"");
+  const configuredModel=env("NVIDIA_MODEL")||"nvidia/nemotron-3-ultra-550b-a55b";
+
+  const fallbackModel=normalizeModel({
+    id:configuredModel,
+    provider:"nvidia",
+    name:configuredModel.split("/").at(-1)||configuredModel,
+    description:"Configured NVIDIA NIM model.",
+    capabilities:["chat","reasoning","tools"],
+    input_modalities:["text"],
+    output_modalities:["text"],
+    free:null,
+    available:true,
+    route:{
+      kind:"openai-chat",
+      provider:"nvidia",
+      model:configuredModel
+    }
+  });
+
   try{
-    const {data}=await fetchJson("https://integrate.api.nvidia.com/v1/models",{headers:{authorization:`Bearer ${key}`}});
-    const models=(Array.isArray(data?.data)?data.data:[]).map(m=>normalizeModel({
-      id:m.id, provider:"nvidia", name:m.name||m.id, description:m.description||"",
-      capabilities:inferCaps(m.id,{...m,tools:true}),
-      context_length:m.context_length||m.max_model_len||0,
-      free:null, route:{kind:"openai-chat",provider:"nvidia"}, raw:m
-    }));
-    return {provider:{id:"nvidia",name:"NVIDIA NIM",configured:true,discovery:"live"},models};
+    const {data}=await fetchJson(`${base}/models`,{
+      headers:{
+        authorization:`Bearer ${key}`,
+        accept:"application/json"
+      }
+    });
+
+    const rows=Array.isArray(data?.data)?data.data:[];
+    const models=rows.map(m=>{
+      const exactId=String(m.id||"").trim();
+      return normalizeModel({
+        id:exactId,
+        provider:"nvidia",
+        name:m.name||exactId,
+        description:m.description||"",
+        capabilities:inferCaps(exactId,{...m,tools:true}),
+        input_modalities:m.architecture?.input_modalities||["text"],
+        output_modalities:m.architecture?.output_modalities||["text"],
+        context_length:m.context_length||m.max_model_len||0,
+        free:null,
+        available:true,
+        route:{
+          kind:"openai-chat",
+          provider:"nvidia",
+          // CRITICAL: preserve the exact publisher/model identifier expected upstream.
+          model:exactId
+        },
+        raw:m
+      });
+    }).filter(m=>m.id);
+
+    const map=new Map(models.map(m=>[m.id,m]));
+    if(!map.has(configuredModel))map.set(configuredModel,fallbackModel);
+
+    return {
+      provider:{
+        id:"nvidia",
+        name:"NVIDIA NIM",
+        configured:true,
+        discovery:"live",
+        baseUrl:base
+      },
+      models:[...map.values()]
+    };
   }catch(error){
-    return {provider:{id:"nvidia",name:"NVIDIA NIM",configured:true,error:String(error.message||error)},models:[]};
+    // Discovery failure must not disable a known configured NVIDIA model.
+    return {
+      provider:{
+        id:"nvidia",
+        name:"NVIDIA NIM",
+        configured:true,
+        discovery:"configured-fallback",
+        baseUrl:base,
+        warning:String(error.message||error)
+      },
+      models:[fallbackModel]
+    };
   }
 }
 
@@ -386,7 +455,12 @@ export async function getCatalog(force=false){
 }
 
 function providerConfig(id){
-  if(id==="nvidia")return {kind:"openai-chat",baseUrl:"https://integrate.api.nvidia.com/v1",key:env("NVIDIA_API_KEY")};
+  if(id==="nvidia")return {
+    kind:"openai-chat",
+    baseUrl:(env("NVIDIA_BASE_URL")||"https://integrate.api.nvidia.com/v1").replace(/\/$/,""),
+    chatPath:env("NVIDIA_CHAT_PATH")||"/chat/completions",
+    key:env("NVIDIA_API_KEY")
+  };
   if(id==="google")return {kind:"google",key:env("GEMINI_API_KEY")};
   if(id==="replicate")return {kind:"replicate",key:env("REPLICATE_API_TOKEN")};
   if(id==="huggingface")return {kind:"huggingface",key:env("HF_TOKEN")||env("HUGGINGFACE_API_KEY")};
@@ -417,15 +491,36 @@ function openAiMessagesToGemini(messages=[]){
 async function chat(model,body){
   const cfg=providerConfig(model.provider);
   if(!cfg)throw new Error(`Provider ${model.provider} não configurado.`);
-  const rawModel=model.route?.model||model.id.split("/").slice(1).join("/");
+  const rawModel=model.route?.model || (
+    ["nvidia","huggingface"].includes(model.provider)
+      ? model.id.replace(/^huggingface\//,"")
+      : model.id.split("/").slice(1).join("/")
+  );
 
   if(model.provider==="nvidia"||cfg.kind==="openai-chat"){
     const base=(cfg.baseUrl||"https://integrate.api.nvidia.com/v1").replace(/\/$/,"");
-    const path=cfg.chatPath||"/chat/completions";
-    const headers={"content-type":"application/json"};
-    if(cfg.key) headers[cfg.authHeader||"authorization"]=(cfg.authPrefix??"Bearer ")+cfg.key;
-    const r=await fetch(`${base}${path}`,{method:"POST",headers,body:JSON.stringify({...body,model:rawModel})});
-    return r;
+    const chatPath=cfg.chatPath||"/chat/completions";
+    const endpoint=`${base}${chatPath.startsWith("/")?chatPath:`/${chatPath}`}`;
+    const headers={"content-type":"application/json","accept":"application/json"};
+    if(cfg.key)headers[cfg.authHeader||"authorization"]=(cfg.authPrefix??"Bearer ")+cfg.key;
+
+    const payload={...body,model:rawModel};
+    const r=await fetch(endpoint,{
+      method:"POST",
+      headers,
+      body:JSON.stringify(payload)
+    });
+
+    // Preserve upstream response but expose useful routing diagnostics.
+    const outgoingHeaders=new Headers(r.headers);
+    outgoingHeaders.set("x-avalynx-provider",model.provider);
+    outgoingHeaders.set("x-avalynx-upstream-model",rawModel);
+
+    return new Response(r.body,{
+      status:r.status,
+      statusText:r.statusText,
+      headers:outgoingHeaders
+    });
   }
 
   if(model.provider==="google"){
@@ -627,7 +722,11 @@ async function googleGenerateVideo(modelId,input,key){
 
 async function media(model,input,capability){
   const cfg=providerConfig(model.provider);
-  const rawModel=model.route?.model||model.id.split("/").slice(1).join("/");
+  const rawModel=model.route?.model || (
+    ["nvidia","huggingface"].includes(model.provider)
+      ? model.id.replace(/^huggingface\//,"")
+      : model.id.split("/").slice(1).join("/")
+  );
 
   if(model.provider==="google"){
     if(!cfg?.key)throw new Error("GEMINI_API_KEY não configurada.");
@@ -677,6 +776,58 @@ export async function handleModelRouter(req,res,url,body={}){
   if(url.pathname==="/api/providers"&&req.method==="GET"){
     const c=await getCatalog(false);
     return json(res,200,{data:c.providers});
+  }
+
+  if(url.pathname==="/api/inference/nvidia-test"&&req.method==="GET"){
+    const cfg=providerConfig("nvidia");
+    const model=env("NVIDIA_MODEL")||"nvidia/nemotron-3-ultra-550b-a55b";
+
+    if(!cfg?.key){
+      return json(res,503,{
+        ok:false,
+        provider:"nvidia",
+        error:"NVIDIA_API_KEY is not configured."
+      });
+    }
+
+    const endpoint=`${cfg.baseUrl}${cfg.chatPath||"/chat/completions"}`;
+    try{
+      const upstream=await fetch(endpoint,{
+        method:"POST",
+        headers:{
+          authorization:`Bearer ${cfg.key}`,
+          "content-type":"application/json",
+          accept:"application/json"
+        },
+        body:JSON.stringify({
+          model,
+          messages:[{role:"user",content:"Reply with exactly: NVIDIA_OK"}],
+          max_tokens:16,
+          temperature:0
+        })
+      });
+
+      const text=await upstream.text();
+      let payload={};
+      try{payload=text?JSON.parse(text):{}}catch{payload={raw:text.slice(0,1000)}}
+
+      return json(res,upstream.ok?200:502,{
+        ok:upstream.ok,
+        provider:"nvidia",
+        endpoint,
+        model,
+        upstreamStatus:upstream.status,
+        response:payload
+      });
+    }catch(error){
+      return json(res,502,{
+        ok:false,
+        provider:"nvidia",
+        endpoint,
+        model,
+        error:String(error.message||error)
+      });
+    }
   }
 
   if(url.pathname==="/api/inference/google-file"&&req.method==="GET"){
