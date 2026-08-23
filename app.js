@@ -6263,6 +6263,55 @@ function setupAvaStudioDock(){
   renderCreatedAvaAgents();
 }
 
+
+function setupMicrosoftFoundryStudio(){
+  const engine=document.querySelector("#avaAgentEngine");
+  const fields=document.querySelector("#foundryAgentFields");
+  const result=document.querySelector("#foundryAgentResult");
+  const status=document.querySelector("#foundryStudioStatus");
+  const sync=()=>{if(fields)fields.hidden=engine?.value!=="microsoft-foundry"};
+  engine?.addEventListener("change",sync); sync();
+
+  document.querySelector("#testFoundryBtn")?.addEventListener("click",async()=>{
+    if(result)result.textContent="Testando Microsoft Foundry…";
+    try{
+      const r=await fetch("/api/foundry",{headers:{accept:"application/json"}});
+      const data=await r.json();
+      if(status)status.textContent=data.ok?"Conectado":"Não conectado";
+      if(result)result.textContent=data.ok?`Foundry conectado · API ${data.apiVersion||"v1"}`:(data.error||`Foundry retornou ${data.upstreamStatus||r.status}`);
+    }catch(error){
+      if(status)status.textContent="Erro";
+      if(result)result.textContent=String(error?.message||error);
+    }
+  });
+
+  document.querySelector("#createFoundryAgentBtn")?.addEventListener("click",async()=>{
+    const name=document.querySelector("#foundryAgentName")?.value||"ava-agent";
+    const model=document.querySelector("#foundryAgentModel")?.value||"";
+    const instructions=document.querySelector("#foundryAgentInstructions")?.value||"";
+    const kind=document.querySelector("#foundryAgentKind")?.value||"prompt";
+    if(!model){if(result)result.textContent="Informe o nome do deployment/modelo do Microsoft Foundry.";return}
+    if(result)result.textContent="Criando Ava Agent no Microsoft Foundry…";
+    try{
+      const r=await fetch("/api/foundry",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({name,model,instructions,kind})});
+      const data=await r.json();
+      if(!data.ok){if(result)result.textContent=data.error||`Foundry retornou ${data.upstreamStatus||r.status}`;return}
+      const agents=getCreatedAvaAgents();
+      const agentObj=data.agent||{};
+      agents.unshift({
+        name:agentObj.name||name,
+        description:`Microsoft Foundry · ${model}`,
+        icon:"MF",
+        engine:"microsoft-foundry",
+        remote:agentObj
+      });
+      saveCreatedAvaAgents(agents.slice(0,50));
+      if(status)status.textContent="Conectado";
+      if(result)result.textContent=`${agentObj.name||name} criado no Microsoft Foundry e adicionado aos seus Ava Agents.`;
+    }catch(error){if(result)result.textContent=String(error?.message||error)}
+  });
+}
+
 async function bootstrapAva() {
   setupIOSPWA();
   setupTechnicalSecretInputs();
@@ -6270,6 +6319,7 @@ async function bootstrapAva() {
   setupTrustedContactSettings();
   setupAvaSettingsCenter();
   setupAvaStudioDock();
+  setupMicrosoftFoundryStudio();
   loadState();
 
   const routed = activateChatFromURL();

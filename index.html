@@ -824,7 +824,36 @@
     <div class="ava-studio-empty" id="avaStudioAgentsEmpty">Seus agentes criados aparecerão fixados aqui.</div>
   </section>
 
-  <section class="ava-studio-dock-section representants">
+  
+  <section class="ava-studio-dock-section foundry">
+    <div class="ava-studio-section-head">
+      <div><strong>Microsoft Foundry</strong><span>Crie Ava Agents usando um projeto Microsoft Foundry</span></div>
+      <span class="ava-setting-status" id="foundryStudioStatus">Opcional</span>
+    </div>
+    <div class="ava-foundry-builder">
+      <label><span>Motor do agente</span>
+        <select id="avaAgentEngine">
+          <option value="avalynx">Avalynx Native</option>
+          <option value="microsoft-foundry">Microsoft Foundry</option>
+        </select>
+      </label>
+      <div id="foundryAgentFields" hidden>
+        <label><span>Nome do agente</span><input id="foundryAgentName" autocomplete="off" placeholder="ava-research-agent"></label>
+        <label><span>Deployment / modelo</span><input id="foundryAgentModel" autocomplete="off" placeholder="nome do deployment"></label>
+        <label class="wide"><span>Instruções</span><textarea id="foundryAgentInstructions" rows="4" placeholder="Você é um Ava Agent..."></textarea></label>
+        <label><span>Tipo</span>
+          <select id="foundryAgentKind"><option value="prompt">Prompt Agent</option><option value="hosted">Hosted Agent (preview)</option></select>
+        </label>
+        <div class="ava-foundry-actions">
+          <button type="button" id="testFoundryBtn">Testar conexão</button>
+          <button type="button" id="createFoundryAgentBtn" class="primary">Criar Ava Agent</button>
+        </div>
+        <div class="ava-foundry-note" id="foundryAgentResult">Endpoint e autenticação ficam somente no backend da Avalynx.</div>
+      </div>
+    </div>
+  </section>
+
+<section class="ava-studio-dock-section representants">
     <div class="ava-studio-section-head">
       <div><strong>Avalynx Représentants</strong><span>Loja de MCPs e integrações</span></div>
       <button type="button" id="openRepresentantsBtn">Explorar</button>

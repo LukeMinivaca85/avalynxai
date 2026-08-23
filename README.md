@@ -205,3 +205,16 @@ Replaces the accordion-style settings UI with a native-feeling sidebar, searchab
 
 ## v6.8.6 — Studio Dock + Représentants
 Settings groups can sit side-by-side on wide screens. Avalynx Studio now uses a compact chevron and opens a fixed dock with created Ava Agents. Adds Avalynx Représentants as the MCP/integration store surface.
+
+
+## v6.8.7 — Microsoft Foundry Ava Agents
+
+Avalynx Studio can now select Microsoft Foundry as an Ava Agent engine.
+
+Backend configuration:
+- `AZURE_AI_FOUNDRY_PROJECT_ENDPOINT`
+- `AZURE_AI_FOUNDRY_ACCESS_TOKEN` (Microsoft Entra bearer token), or `AZURE_AI_FOUNDRY_API_KEY` where the selected Foundry API/resource supports key authentication
+- `AZURE_AI_FOUNDRY_API_VERSION=v1`
+
+The browser never receives these credentials. `/api/foundry` performs connection tests and creates Prompt Agents server-side.
+Hosted Agent is shown as a future/advanced option but is deliberately not fake-deployed: Microsoft Foundry hosted agents require a code/container deployment definition.
