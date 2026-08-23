@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.9.2-auto-web";
+const CACHE = "ava-i-shell-v6.9.3-time-tool-leak";
 const ASSETS = [
   "/",
   "/index.html",

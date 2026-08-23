@@ -247,3 +247,14 @@ Flow:
 6. Manual Web mode still works and forces a search.
 
 The search backend uses DuckDuckGo HTML results with a Wikipedia fallback. This avoids requiring a separate paid search API key, but public endpoints can change or rate-limit; production deployments should eventually support a dedicated search provider as an additional backend.
+
+
+## v6.9.3 — Current Time + Tool Leak Fix
+
+- Every Chat and Ava Code turn receives an authoritative runtime date, local time, IANA timezone, UTC offset and ISO timestamp.
+- Relative phrases such as today, tomorrow, now, tonight, this week/month/year are interpreted from the runtime timestamp.
+- Current/fresh facts still trigger live web search automatically.
+- Textual internal tool calls such as `(tool: browse: ...)`, `<tool_call>`, function JSON, and leaked renderer placeholders are stripped before user-facing rendering.
+- The system prompt explicitly forbids models from narrating internal tool calls.
+- Repeated `svg`, `svgsvg`, and `svgsvgsvg` artifacts are removed.
+- Developer settings show the runtime date/time so deployment behavior can be verified easily.

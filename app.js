@@ -332,6 +332,12 @@ SAFETY CONTEXT RULES
 - For genuine first-person self-harm or suicide intent, respond supportively and prioritize immediate safety.
 - Never claim Avalynx contacted a parent, trusted contact, emergency service, or anyone else unless an explicit user-authorized action actually occurred.
 - Trusted-contact outreach is always opt-in. Never send a message automatically.
+
+
+INTERNAL TOOL CALLS MUST NEVER BE SHOWN
+- Never print or narrate internal tool syntax such as "(tool: browse: ...)", "<tool_call>", function-call JSON, or MCP invocation payloads.
+- If live web search is needed, the Avalynx runtime performs it. Respond only with the final user-facing answer and citations.
+- Never output placeholder tokens such as "svg", "svgsvg", or "svgsvgsvg".
 `;
 
 const DEFAULT_MODEL_VERSION = 4;
@@ -1867,27 +1873,66 @@ function deleteEditingAgent() {
 function avaCurrentDateContext() {
   const now = new Date();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const local = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: timezone, year:"numeric", month:"2-digit", day:"2-digit",
-    hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false
+  const locale = navigator.language || "pt-BR";
+
+  const date = new Intl.DateTimeFormat(locale, {
+    timeZone: timezone,
+    year:"numeric", month:"long", day:"2-digit",
+    weekday:"long"
   }).format(now);
-  return { iso: now.toISOString(), local, timezone, year: now.getFullYear() };
+
+  const time = new Intl.DateTimeFormat(locale, {
+    timeZone: timezone,
+    hour:"2-digit", minute:"2-digit", second:"2-digit",
+    hour12:false
+  }).format(now);
+
+  const offsetParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    timeZoneName:"longOffset"
+  }).formatToParts(now);
+  const offset = offsetParts.find(p=>p.type==="timeZoneName")?.value || "";
+
+  return {
+    iso: now.toISOString(),
+    date,
+    time,
+    local:`${date} ${time}`,
+    timezone,
+    utcOffset:offset,
+    locale,
+    year:now.getFullYear(),
+    epochMs:now.getTime()
+  };
+}
+
+function currentRuntimeSystemContext() {
+  const d=avaCurrentDateContext();
+  return `AUTHORITATIVE CURRENT DATE AND TIME FROM THE AVALYNX RUNTIME:
+- Current local date: ${d.date}
+- Current local time: ${d.time}
+- IANA time zone: ${d.timezone}
+- UTC offset: ${d.utcOffset}
+- ISO timestamp: ${d.iso}
+- Current year: ${d.year}
+
+Rules:
+- Treat this runtime timestamp as authoritative for the current turn.
+- Never claim your knowledge cutoff determines today's date.
+- Correctly interpret "today", "tomorrow", "yesterday", "now", "this morning", "tonight", "this week", "this month", "this year", and equivalent expressions from this timestamp.
+- For facts that may have changed recently, use live web search rather than relying only on model knowledge.
+- Never invent a live time or date if runtime context is unavailable.`;
 }
 
 function freshWebSystemContext() {
-  const d = avaCurrentDateContext();
-  return `CURRENT REAL-WORLD DATE/TIME
-Local: ${d.local}
-Timezone: ${d.timezone}
-ISO: ${d.iso}
-Current year: ${d.year}
+  return `${currentRuntimeSystemContext()}
 
-Freshness policy:
+FRESHNESS POLICY:
 - "today", "now", "currently", "latest", "this year", "recent", "hoje", "agora", "atualmente", "mais recente" and equivalents require fresh information.
 - If a live web/search tool is available, search before answering current or changing facts.
 - Prefer sources from the current year, and preferably today/recent days for "today/latest" requests.
 - Never present stale model memory as if it were live information.
-- If no live search tool is available, explicitly say live web search is unavailable for that turn.`;
+- If live search fails, explicitly say live web search was unavailable for that turn.`;
 }
 
 function isWebSearchMcpTool(tool) {
@@ -2392,14 +2437,32 @@ function wireCodeCopy(scope) {
 }
 
 
-function cleanSvgTextArtifacts(text) {
+
+function stripInternalToolLeak(text) {
   return String(text ?? "")
-    .replace(/(?:\bsvg\b\s*){2,}/gi, "")
-    .replace(/(?:svg){2,}/gi, "")
-    .replace(/^\s*svg\s*$/gim, "");
+    // textual tool-call syntax leaked by some models
+    .replace(/^\s*\(tool:\s*[a-z0-9_.-]+\s*:\s*[\s\S]*?\)\s*$/gim,"")
+    .replace(/^\s*tool\s*:\s*[a-z0-9_.-]+\s*\([^)]*\)\s*$/gim,"")
+    .replace(/^\s*<tool_call>[\s\S]*?<\/tool_call>\s*$/gim,"")
+    .replace(/^\s*```(?:tool|json)?\s*\{[\s\S]*?"(?:tool|name)"[\s\S]*?\}\s*```\s*$/gim,"")
+    // recurrent renderer artifacts
+    .replace(/(?:\bsvg\b\s*){2,}/gi,"")
+    .replace(/(?:svg){2,}/gi,"")
+    .replace(/^\s*\*{0,2}svg\*{0,2}\s*$/gim,"")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
+}
+
+function containsInternalToolLeak(text) {
+  return /\(tool:\s*[a-z0-9_.-]+\s*:|<tool_call>|(?:svg){2,}/i.test(String(text||""));
+}
+
+function cleanSvgTextArtifacts(text) {
+  return stripInternalToolLeak(text);
 }
 
 function renderMarkdown(text) {
+  text = stripInternalToolLeak(text);
   text = cleanSvgTextArtifacts(text);
   text = String(text || "").replace(/(?:\bsvg\b\s*){2,}/gi, "");
   let source = String(text || "");
@@ -5018,6 +5081,7 @@ async function generateAvaCode(chat,requestContext=null){
       thinking.classList.remove("running");
       thinking.classList.add(codexResult.failed ? "error" : "done");
       thinking.querySelector("span:last-child").textContent=codexResult.failed ? "Codex CLI falhou · diagnóstico exibido" : "Codex CLI finalizado";
+      assistantMsg.content=stripInternalToolLeak(assistantMsg.content);
       contentNode.innerHTML=renderMarkdown(assistantMsg.content);
       finalizeRichMessage(node);
       persist();
@@ -5277,7 +5341,8 @@ Fall back to other Hugging Face tool-capable coding models before using other pr
     assistantMsg.model=selectedModel || "nvidia/nemotron-3-ultra-550b-a55b";
 
     assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
-    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    assistantMsg.content=stripInternalToolLeak(assistantMsg.content);
+      contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
     finalizeRichMessage(node);
     persist();
@@ -5286,7 +5351,8 @@ Fall back to other Hugging Face tool-capable coding models before using other pr
   }catch(e){
     assistantMsg.content=`Ava Code não conseguiu responder: ${String(e.message||e)}`;
     assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
-    contentNode.innerHTML=renderMarkdown(assistantMsg.content);
+    assistantMsg.content=stripInternalToolLeak(assistantMsg.content);
+      contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     contentNode.classList.remove("typing-cursor");
     thinking.classList.remove("running");
     thinking.classList.add("error");
@@ -5439,6 +5505,8 @@ INSTRUCTIONS:
 - Use these live results when answering current/fresh questions.
 - Cite factual claims from the search using inline markers like [1], [2].
 - At the end, include a short "Fontes" list with the cited URLs.
+- Never emit internal tool syntax such as "(tool: browse: ...)" or function-call JSON.
+- Never emit renderer placeholders such as "svg", "svgsvg", or "svgsvgsvg".
 - Do not invent details that are not supported by the results.
 - If results are insufficient, say so clearly.`;
 }
@@ -5601,7 +5669,7 @@ The user explicitly requested live web information. If no live search MCP tool w
             const delta=deltaObj.content;
             if(typeof delta==="string"){
               assistantMsg.content+=delta;
-              contentNode.innerHTML=renderMarkdown(contentWithoutPendingWidgets(assistantMsg.content));
+              contentNode.innerHTML=renderMarkdown(contentWithoutPendingWidgets(stripInternalToolLeak(assistantMsg.content)));
               finalizeRichMessage(node);
               scrollToBottom(false);
             }
@@ -5657,6 +5725,7 @@ A credencial do provider foi recusada pelo backend.
       assistantMsg.content=`⚠️ A pesquisa web foi solicitada, mas esta resposta não trouxe fontes citáveis. Não trate informações atuais como confirmadas sem uma ferramenta de busca conectada.\n\n${assistantMsg.content}`;
     }
 
+    assistantMsg.content=stripInternalToolLeak(assistantMsg.content);
     extractRichWidgets(assistantMsg);
     assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
@@ -6316,6 +6385,13 @@ function setupAvaSettingsNavigation(){
   });
 }
 
+
+function updateRuntimeTimeStatus(){
+  const d=avaCurrentDateContext();
+  const el=document.querySelector("#avaRuntimeTimeStatus");
+  if(el)el.textContent=`${d.date} · ${d.time} · ${d.timezone}`;
+}
+
 function setupAvaSettingsCenter(){
   document.querySelectorAll(".ava-settings-shell input,.ava-settings-shell select").forEach(el=>{
     el.addEventListener("change",saveAvaSettingsCenter);
@@ -6334,7 +6410,9 @@ function setupAvaSettingsCenter(){
     localStorage.removeItem(AVA_PREFS_KEY); loadAvaSettingsCenter(); showToolGuard("Preferências locais da Avalynx removidas.");
   });
   loadAvaSettingsCenter();
-  setupAvaSettingsNavigation();
+  setupAvaSettingsNavigation();  document.querySelector("#refreshRuntimeTimeBtn")?.addEventListener("click",updateRuntimeTimeStatus);
+  updateRuntimeTimeStatus();
+
 }
 
 
