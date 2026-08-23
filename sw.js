@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.8.7-foundry-agents";
+const CACHE = "ava-i-shell-v6.9-memory";
 const ASSETS = [
   "/",
   "/index.html",

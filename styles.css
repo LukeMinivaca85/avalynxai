@@ -2693,17 +2693,5 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 .ava-studio-agent-chip>div,.ava-representants-preview button>div{display:grid;gap:2px}.ava-studio-agent-chip strong,.ava-representants-preview strong{font-size:10px}.ava-studio-agent-chip small,.ava-representants-preview small{font-size:8px;color:var(--muted)}
 .ava-studio-empty{padding:15px 8px;color:var(--muted);font-size:9px;text-align:center}
 @media(max-width:720px){.ava-studio-dock{top:auto;bottom:10px;right:10px;left:10px;width:auto;max-height:72vh;border-radius:20px}}
-
-/* v6.8.7 — Microsoft Foundry agent builder */
-.ava-foundry-builder{display:grid;gap:9px}
-.ava-foundry-builder label{display:grid;gap:5px;font-size:9px;color:var(--muted)}
-.ava-foundry-builder input,.ava-foundry-builder select,.ava-foundry-builder textarea{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:9px;background:var(--soft);color:var(--text);padding:8px 9px;font:inherit;font-size:10px}
-.ava-foundry-builder textarea{resize:vertical;min-height:76px}
-#foundryAgentFields{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-#foundryAgentFields[hidden]{display:none}
-#foundryAgentFields .wide,.ava-foundry-actions,.ava-foundry-note{grid-column:1/-1}
-.ava-foundry-actions{display:flex;justify-content:flex-end;gap:7px}
-.ava-foundry-actions button{border:1px solid var(--border);border-radius:9px;background:var(--soft);color:var(--text);padding:7px 9px;font-size:9px}
-.ava-foundry-actions button.primary{background:var(--text);color:var(--bg)}
-.ava-foundry-note{font-size:8px;color:var(--muted);line-height:1.4}
-@media(max-width:520px){#foundryAgentFields{grid-template-columns:1fr}#foundryAgentFields .wide,.ava-foundry-actions,.ava-foundry-note{grid-column:1}}
+\n/* v6.9 memory */
+.memory-chat-toggle{border:1px solid var(--border);background:var(--soft);color:var(--text);border-radius:10px;padding:6px 9px;font-size:9px;white-space:nowrap}.memory-chat-toggle.off{opacity:.65;text-decoration:line-through}.ava-memory-list{display:grid;gap:7px;margin-bottom:18px}.ava-memory-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 12px;border:1px solid var(--border);border-radius:12px;background:var(--soft)}.ava-memory-item>div{display:grid;gap:4px;min-width:0}.ava-memory-item strong{font-size:10px;font-weight:550;line-height:1.4;overflow-wrap:anywhere}.ava-memory-item small{font-size:8px;color:var(--muted)}.ava-memory-scope{justify-self:start;padding:3px 6px;border-radius:999px;background:var(--panel);font-size:7px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.ava-memory-item button{border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:8px;padding:6px 8px;font-size:8px}.ava-memory-empty,.ava-memory-loading{padding:24px 12px;text-align:center;color:var(--muted);font-size:9px;border:1px dashed var(--border);border-radius:12px}\n

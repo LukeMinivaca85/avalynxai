@@ -480,6 +480,7 @@
     <nav class="ava-settings-nav">
       <button class="ava-settings-nav-item active" data-settings-page="general"><span>⚙</span>Geral</button>
       <button class="ava-settings-nav-item" data-settings-page="personalization"><span>◉</span>Personalização</button>
+      <button class="ava-settings-nav-item" data-settings-page="memory"><span>✦</span>Memória</button>
       <button class="ava-settings-nav-item" data-settings-page="models"><span>◇</span>Modelos e IA</button>
       <button class="ava-settings-nav-item" data-settings-page="voice"><span>♫</span>Voz</button>
       <button class="ava-settings-nav-item" data-settings-page="code"><span>‹/›</span>Ava Code</button>
@@ -520,7 +521,18 @@
       </div>
     </section>
 
-    <section class="ava-settings-page" data-settings-panel="models">
+    <section class="ava-settings-page" data-settings-panel="memory">
+<header><h2>Memória</h2><p>A Ava pode lembrar informações úteis entre conversas sem salvar tudo.</p></header>
+<div class="ava-setting-group">
+<label class="ava-setting-row"><div><strong>Memória entre conversas</strong><small>Recupera memórias relevantes antes de responder.</small></div><input class="ava-switch" id="avaCrossChatMemorySetting" type="checkbox" checked></label>
+<label class="ava-setting-row"><div><strong>Memória de projetos</strong><small>Associa informações a projetos em andamento.</small></div><input class="ava-switch" id="avaProjectMemorySetting" type="checkbox" checked></label>
+<label class="ava-setting-row"><div><strong>Memória temporária</strong><small>Expira automaticamente após alguns dias.</small></div><input class="ava-switch" id="avaTemporaryMemorySetting" type="checkbox" checked></label>
+</div>
+<div class="ava-setting-group"><div class="ava-setting-row"><div><strong>Memórias salvas</strong><small>Veja e remova o que a Ava guardou.</small></div><button type="button" id="refreshMemoriesBtn" class="ava-settings-action">Atualizar</button></div></div>
+<div id="avaMemoryList" class="ava-memory-list"></div>
+<div class="ava-setting-group"><div class="ava-setting-row danger"><div><strong>Limpar todas as memórias</strong><small>Isso não apaga suas conversas.</small></div><button type="button" id="clearAllMemoriesBtn" class="ava-settings-action subtle">Limpar tudo</button></div></div>
+</section>
+<section class="ava-settings-page" data-settings-panel="models">
       <header><h2>Modelos e IA</h2><p>Controle roteamento, providers e fallbacks.</p></header>
       <div class="ava-setting-group">
         <label class="ava-setting-row"><div><strong>Provider preferencial</strong><small>O Router ainda pode usar fallback quando necessário.</small></div><select id="avaProviderSetting"><option value="auto">Automático</option><option value="nvidia">NVIDIA NIM</option><option value="huggingface">Hugging Face</option><option value="google">Google AI</option></select></label>
@@ -824,36 +836,7 @@
     <div class="ava-studio-empty" id="avaStudioAgentsEmpty">Seus agentes criados aparecerão fixados aqui.</div>
   </section>
 
-  
-  <section class="ava-studio-dock-section foundry">
-    <div class="ava-studio-section-head">
-      <div><strong>Microsoft Foundry</strong><span>Crie Ava Agents usando um projeto Microsoft Foundry</span></div>
-      <span class="ava-setting-status" id="foundryStudioStatus">Opcional</span>
-    </div>
-    <div class="ava-foundry-builder">
-      <label><span>Motor do agente</span>
-        <select id="avaAgentEngine">
-          <option value="avalynx">Avalynx Native</option>
-          <option value="microsoft-foundry">Microsoft Foundry</option>
-        </select>
-      </label>
-      <div id="foundryAgentFields" hidden>
-        <label><span>Nome do agente</span><input id="foundryAgentName" autocomplete="off" placeholder="ava-research-agent"></label>
-        <label><span>Deployment / modelo</span><input id="foundryAgentModel" autocomplete="off" placeholder="nome do deployment"></label>
-        <label class="wide"><span>Instruções</span><textarea id="foundryAgentInstructions" rows="4" placeholder="Você é um Ava Agent..."></textarea></label>
-        <label><span>Tipo</span>
-          <select id="foundryAgentKind"><option value="prompt">Prompt Agent</option><option value="hosted">Hosted Agent (preview)</option></select>
-        </label>
-        <div class="ava-foundry-actions">
-          <button type="button" id="testFoundryBtn">Testar conexão</button>
-          <button type="button" id="createFoundryAgentBtn" class="primary">Criar Ava Agent</button>
-        </div>
-        <div class="ava-foundry-note" id="foundryAgentResult">Endpoint e autenticação ficam somente no backend da Avalynx.</div>
-      </div>
-    </div>
-  </section>
-
-<section class="ava-studio-dock-section representants">
+  <section class="ava-studio-dock-section representants">
     <div class="ava-studio-section-head">
       <div><strong>Avalynx Représentants</strong><span>Loja de MCPs e integrações</span></div>
       <button type="button" id="openRepresentantsBtn">Explorar</button>

@@ -4128,6 +4128,7 @@ async function sendCurrent() {
   });
 
   chat.messages.push(userMsg);
+  rememberFromUserMessage(userMsg.content,chat).catch(()=>{});
   // Keep "Novo chat" until the first assistant response is complete.
   // The title is generated from the actual conversation, not copied from this message.
 
@@ -4972,6 +4973,8 @@ async function generateAvaCode(chat,requestContext=null){
 
   try{
     const latestUserText=[...chat.messages].reverse().find(m=>m.role==="user")?.content||"";
+    const codeMemories=await fetchRelevantMemories(latestUserText,chat);
+    const codeMemoryBlock=memoryContextBlock(codeMemories);
     const codexResult=await runCodexCliEngine(latestUserText,requestContext,node);
     if(codexResult){
       assistantMsg.content=codexResult.content;
@@ -5004,7 +5007,7 @@ async function generateAvaCode(chat,requestContext=null){
     const messages=toApiMessages(chat,requestContext).slice(0,-1);
     messages.unshift({
       role:"system",
-      content:`${freshWebSystemContext()}\n\nYou are Ava Code, an agentic software-engineering product by Avalynx.
+      content:`${freshWebSystemContext()}\n\n${codeMemoryBlock}\n\nYou are Ava Code, an agentic software-engineering product by Avalynx.
 
 You are NOT a generic chatbot. You are an engineering agent with real external tools supplied dynamically by the runtime.
 
@@ -5344,6 +5347,19 @@ async function maybeRunChatMcp(chat, requestContext, signal) {
   return null;
 }
 
+const AVA_MEMORY_USER_ID_KEY="ava-memory-user-id";
+function avalynxMemoryUserId(){let id=localStorage.getItem(AVA_MEMORY_USER_ID_KEY);if(!id){id=crypto?.randomUUID?.()||`local-${Date.now()}-${Math.random().toString(36).slice(2)}`;localStorage.setItem(AVA_MEMORY_USER_ID_KEY,id)}return id}
+function memorySettingsEnabled(id,defaultValue=true){const el=document.querySelector(`#${id}`);return el?el.checked:defaultValue}
+function chatMemoryDisabled(chat){return Boolean(chat?.memoryDisabled)}
+function memoryHeaders(){return {"x-avalynx-user-id":avalynxMemoryUserId(),accept:"application/json"}}
+async function fetchRelevantMemories(query,chat){if(!memorySettingsEnabled("avaCrossChatMemorySetting",true)||chatMemoryDisabled(chat))return [];try{const p=new URLSearchParams({q:String(query||"").slice(0,1000),limit:"8"});const r=await fetch(`/api/memory?${p}`,{headers:memoryHeaders()});if(!r.ok)return [];const data=await r.json();return Array.isArray(data.data)?data.data:[]}catch{return []}}
+function memoryContextBlock(memories=[]){if(!memories.length)return "";return `RELEVANT MEMORY FROM PREVIOUS CONVERSATIONS:\n${memories.map((m,i)=>`${i+1}. [${m.scope}] ${m.content}`).join("\n")}\n\nUse these memories only when relevant. Do not mention memory retrieval unless asked. Current user messages override stored memory.`}
+function memoryCandidateFromMessage(text){const raw=String(text||"").trim();if(!raw||raw.length>1200)return null;const lower=raw.toLowerCase();if(/\b(password|senha|api key|token|secret|chave de api)\b/i.test(raw))return null;if(/\b(suicid|automutil|diagnóstico|doença|religião|orientação sexual|partido político|crime)\b/i.test(raw))return null;if(/\b(lembre|lembra que|guarde|memorize)\b/i.test(lower))return {scope:"user",content:raw,importance:9,tags:["explicit-memory"]};if(/\b(eu prefiro|prefiro que|gosto de|não gosto de|me chame de|quero que você)\b/i.test(lower))return {scope:"user",content:raw,importance:7,tags:["preference"]};if(/\b(meu projeto|estou trabalhando|estamos construindo|estou criando|a avalynx|ava code)\b/i.test(lower))return {scope:"project",content:raw,importance:6,tags:["project"]};if(/\b(essa semana|nos próximos dias|amanhã|temporariamente|por enquanto)\b/i.test(lower))return {scope:"temporary",content:raw,importance:4,tags:["temporary"]};return null}
+async function persistMemoryCandidate(candidate,chat){if(!candidate||chatMemoryDisabled(chat))return;if(candidate.scope==="project"&&!memorySettingsEnabled("avaProjectMemorySetting",true))return;if(candidate.scope==="temporary"&&!memorySettingsEnabled("avaTemporaryMemorySetting",true))return;try{await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"create",user_id:avalynxMemoryUserId(),scope:candidate.scope,content:candidate.content,importance:candidate.importance,tags:candidate.tags,project_id:chat?.projectId||null,source_chat_id:chat?.id||null})})}catch{}}
+async function rememberFromUserMessage(text,chat){const c=memoryCandidateFromMessage(text);if(c)await persistMemoryCandidate(c,chat)}
+async function renderMemorySettingsList(){const list=document.querySelector("#avaMemoryList");if(!list)return;list.innerHTML='<div class="ava-memory-loading">Carregando memórias…</div>';try{const r=await fetch("/api/memory?limit=40",{headers:memoryHeaders()});const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);const rows=Array.isArray(data.data)?data.data:[];if(!rows.length){list.innerHTML='<div class="ava-memory-empty">Nenhuma memória salva ainda.</div>';return}list.innerHTML=rows.map(m=>`<article class="ava-memory-item"><div><span class="ava-memory-scope">${escapeHtml(m.scope)}</span><strong>${escapeHtml(m.content)}</strong><small>${m.expires_at?`Expira ${new Date(m.expires_at).toLocaleDateString()}`:"Sem expiração"}</small></div><button type="button" data-delete-memory="${escapeHtml(m.id)}">Remover</button></article>`).join("");list.querySelectorAll("[data-delete-memory]").forEach(btn=>btn.onclick=async()=>{await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"delete",id:btn.dataset.deleteMemory,user_id:avalynxMemoryUserId()})});renderMemorySettingsList()})}catch(error){list.innerHTML=`<div class="ava-memory-empty">Memória indisponível: ${escapeHtml(String(error.message||error))}</div>`}}
+function setupMemoryUI(){document.querySelector("#refreshMemoriesBtn")?.addEventListener("click",renderMemorySettingsList);document.querySelector("#clearAllMemoriesBtn")?.addEventListener("click",async()=>{if(!confirm("Limpar todas as memórias da Avalynx neste perfil?"))return;await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"clear",user_id:avalynxMemoryUserId()})});renderMemorySettingsList()});document.querySelector("#dontRememberChatBtn")?.addEventListener("click",()=>{const chat=activeChat?.();if(!chat)return;chat.memoryDisabled=!chat.memoryDisabled;const btn=document.querySelector("#dontRememberChatBtn");btn.classList.toggle("off",chat.memoryDisabled);btn.setAttribute("aria-pressed",String(chat.memoryDisabled));btn.textContent=chat.memoryDisabled?"✦ Memória desligada":"✦ Memória";persist()})}
+
 async function generateAssistant(chat, requestContext = null) {
   state.generating = true;
   state.controller = new AbortController();
@@ -5370,6 +5386,10 @@ async function generateAssistant(chat, requestContext = null) {
       persist();
       return;
     }
+
+    const latestUserForMemory=[...chat.messages].reverse().find(m=>m.role==="user");
+    const retrievedMemories=await fetchRelevantMemories(latestUserForMemory?.content||"",chat);
+    const memoryBlock=memoryContextBlock(retrievedMemories);
 
     const activeAgent = activeAgentForChat(chat);
     const requested = activeAgent?.model || state.model;
@@ -6263,55 +6283,6 @@ function setupAvaStudioDock(){
   renderCreatedAvaAgents();
 }
 
-
-function setupMicrosoftFoundryStudio(){
-  const engine=document.querySelector("#avaAgentEngine");
-  const fields=document.querySelector("#foundryAgentFields");
-  const result=document.querySelector("#foundryAgentResult");
-  const status=document.querySelector("#foundryStudioStatus");
-  const sync=()=>{if(fields)fields.hidden=engine?.value!=="microsoft-foundry"};
-  engine?.addEventListener("change",sync); sync();
-
-  document.querySelector("#testFoundryBtn")?.addEventListener("click",async()=>{
-    if(result)result.textContent="Testando Microsoft Foundry…";
-    try{
-      const r=await fetch("/api/foundry",{headers:{accept:"application/json"}});
-      const data=await r.json();
-      if(status)status.textContent=data.ok?"Conectado":"Não conectado";
-      if(result)result.textContent=data.ok?`Foundry conectado · API ${data.apiVersion||"v1"}`:(data.error||`Foundry retornou ${data.upstreamStatus||r.status}`);
-    }catch(error){
-      if(status)status.textContent="Erro";
-      if(result)result.textContent=String(error?.message||error);
-    }
-  });
-
-  document.querySelector("#createFoundryAgentBtn")?.addEventListener("click",async()=>{
-    const name=document.querySelector("#foundryAgentName")?.value||"ava-agent";
-    const model=document.querySelector("#foundryAgentModel")?.value||"";
-    const instructions=document.querySelector("#foundryAgentInstructions")?.value||"";
-    const kind=document.querySelector("#foundryAgentKind")?.value||"prompt";
-    if(!model){if(result)result.textContent="Informe o nome do deployment/modelo do Microsoft Foundry.";return}
-    if(result)result.textContent="Criando Ava Agent no Microsoft Foundry…";
-    try{
-      const r=await fetch("/api/foundry",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({name,model,instructions,kind})});
-      const data=await r.json();
-      if(!data.ok){if(result)result.textContent=data.error||`Foundry retornou ${data.upstreamStatus||r.status}`;return}
-      const agents=getCreatedAvaAgents();
-      const agentObj=data.agent||{};
-      agents.unshift({
-        name:agentObj.name||name,
-        description:`Microsoft Foundry · ${model}`,
-        icon:"MF",
-        engine:"microsoft-foundry",
-        remote:agentObj
-      });
-      saveCreatedAvaAgents(agents.slice(0,50));
-      if(status)status.textContent="Conectado";
-      if(result)result.textContent=`${agentObj.name||name} criado no Microsoft Foundry e adicionado aos seus Ava Agents.`;
-    }catch(error){if(result)result.textContent=String(error?.message||error)}
-  });
-}
-
 async function bootstrapAva() {
   setupIOSPWA();
   setupTechnicalSecretInputs();
@@ -6319,7 +6290,7 @@ async function bootstrapAva() {
   setupTrustedContactSettings();
   setupAvaSettingsCenter();
   setupAvaStudioDock();
-  setupMicrosoftFoundryStudio();
+  setupMemoryUI();
   loadState();
 
   const routed = activateChatFromURL();
