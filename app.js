@@ -6194,12 +6194,82 @@ function setupAvaSettingsCenter(){
   setupAvaSettingsNavigation();
 }
 
+
+const AVA_STUDIO_AGENTS_KEY="ava-studio-created-agents";
+
+function getCreatedAvaAgents(){
+  try{
+    const value=JSON.parse(localStorage.getItem(AVA_STUDIO_AGENTS_KEY)||"[]");
+    return Array.isArray(value)?value:[];
+  }catch{return []}
+}
+function saveCreatedAvaAgents(agents){
+  localStorage.setItem(AVA_STUDIO_AGENTS_KEY,JSON.stringify(Array.isArray(agents)?agents:[]));
+  renderCreatedAvaAgents();
+}
+function renderCreatedAvaAgents(){
+  const list=document.querySelector("#avaStudioCreatedAgents");
+  const empty=document.querySelector("#avaStudioAgentsEmpty");
+  if(!list)return;
+  const agents=getCreatedAvaAgents();
+  list.innerHTML="";
+  agents.forEach((agent,index)=>{
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.className="ava-studio-agent-chip";
+    btn.innerHTML=`<span>${escapeHtml(String(agent.icon||"A").slice(0,2))}</span><div><strong>${escapeHtml(agent.name||"Ava Agent")}</strong><small>${escapeHtml(agent.description||"Agente personalizado")}</small></div>`;
+    btn.onclick=()=>{
+      if(typeof openStudio==="function")openStudio("agents");
+      showToolGuard(`Abrindo ${agent.name||"Ava Agent"} no Avalynx Studio.`);
+    };
+    list.appendChild(btn);
+  });
+  if(empty)empty.hidden=agents.length>0;
+}
+function openAvaStudioDock(){
+  const dock=document.querySelector("#avaStudioDock");
+  if(!dock)return;
+  dock.hidden=false;
+  requestAnimationFrame(()=>dock.classList.add("open"));
+  renderCreatedAvaAgents();
+}
+function closeAvaStudioDock(){
+  const dock=document.querySelector("#avaStudioDock");
+  if(!dock)return;
+  dock.classList.remove("open");
+  setTimeout(()=>{if(!dock.classList.contains("open"))dock.hidden=true},180);
+}
+function toggleAvaStudioDock(){
+  const dock=document.querySelector("#avaStudioDock");
+  if(!dock)return;
+  if(dock.hidden||!dock.classList.contains("open"))openAvaStudioDock(); else closeAvaStudioDock();
+}
+function openAvalynxRepresentants(){
+  openAvaStudioDock();
+  document.querySelector("#avaStudioDock .representants")?.scrollIntoView({behavior:"smooth",block:"start"});
+  if(typeof openStudio==="function"){
+    try{openStudio("mcp")}catch{}
+  }
+}
+function setupAvaStudioDock(){
+  document.querySelector("#avaStudioToggle")?.addEventListener("click",event=>{event.preventDefault();toggleAvaStudioDock()});
+  document.querySelector('[data-ava-studio-toggle="true"]')?.addEventListener("click",event=>{event.preventDefault();toggleAvaStudioDock()});
+  document.querySelector("#closeAvaStudioDock")?.addEventListener("click",closeAvaStudioDock);
+  document.querySelector("#createDockAgentBtn")?.addEventListener("click",()=>{
+    if(typeof openStudio==="function")openStudio("agents");
+  });
+  document.querySelector("#openRepresentantsBtn")?.addEventListener("click",openAvalynxRepresentants);
+  document.querySelectorAll("[data-representant]").forEach(btn=>btn.addEventListener("click",openAvalynxRepresentants));
+  renderCreatedAvaAgents();
+}
+
 async function bootstrapAva() {
   setupIOSPWA();
   setupTechnicalSecretInputs();
   setupExternalActionGuard();
   setupTrustedContactSettings();
   setupAvaSettingsCenter();
+  setupAvaStudioDock();
   loadState();
 
   const routed = activateChatFromURL();

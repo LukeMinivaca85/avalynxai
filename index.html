@@ -42,7 +42,7 @@
             <span>Personal Intelligence</span>
           </div>
         </div>
-        <button id="closeSidebar" class="icon-btn mobile-only" aria-label="Fechar menu">×</button>
+        <button id="closeSidebar" class="icon-btn mobile-only" aria-label="Fechar menu" data-ava-studio-toggle="true">×</button>
       </div>
 
       <button id="newChatBtn" class="new-chat-btn">
@@ -56,8 +56,7 @@
       <div class="sidebar-bottom">
         <button id="studioBtn" class="sidebar-action studio-sidebar-action">
           <span class="studio-sidebar-icon">◇</span>
-          <span>Avalynx Studio</span>
-        </button><button id="agentPinsToggle" class="agent-pins-toggle" type="button" aria-label="Agentes fixados">↓</button><div id="agentPinsMenu" class="agent-pins-menu" hidden></div>
+          <span>Avalynx Studio</span> <span class="ava-studio-chevron" aria-hidden="true">›</span></button><button id="agentPinsToggle" class="agent-pins-toggle" type="button" aria-label="Agentes fixados">↓</button><div id="agentPinsMenu" class="agent-pins-menu" hidden></div>
         <button id="installBtn" class="sidebar-action hidden">Adicionar ao iPhone</button>
         <button id="settingsBtn" class="sidebar-action">Configurações</button>
       </div>
@@ -564,7 +563,7 @@
       <header><h2>Plugins e MCPs</h2><p>Ferramentas e integrações disponíveis para a Ava.</p></header>
       <div class="ava-setting-group">
         <label class="ava-setting-row"><div><strong>Suporte a MCP</strong></div><input class="ava-switch" id="avaMcpSetting" type="checkbox" checked></label>
-        <div class="ava-setting-row"><div><strong>Loja de MCPs</strong><small>Explore integrações disponíveis no Avalynx Studio.</small></div><button type="button" class="ava-settings-action" data-open-studio="mcp">Abrir</button></div>
+        <div class="ava-setting-row"><div><strong>Avalynx Représentants</strong><small>Loja de MCPs, ferramentas e integrações.</small></div><button type="button" class="ava-settings-action" data-open-studio="mcp">Abrir</button></div>
       </div>
     </section>
 
@@ -805,6 +804,40 @@
     </div>
   </form>
 </dialog>
+
+
+<aside class="ava-studio-dock" id="avaStudioDock" aria-label="Avalynx Studio" hidden>
+  <div class="ava-studio-dock-head">
+    <div>
+      <strong>Avalynx Studio</strong>
+      <span>Seu espaço de criação</span>
+    </div>
+    <button type="button" id="closeAvaStudioDock" aria-label="Fechar Avalynx Studio">×</button>
+  </div>
+
+  <section class="ava-studio-dock-section">
+    <div class="ava-studio-section-head">
+      <div><strong>Meus Ava Agents</strong><span>Agentes criados por você</span></div>
+      <button type="button" id="createDockAgentBtn">+ Criar</button>
+    </div>
+    <div class="ava-studio-agent-list" id="avaStudioCreatedAgents"></div>
+    <div class="ava-studio-empty" id="avaStudioAgentsEmpty">Seus agentes criados aparecerão fixados aqui.</div>
+  </section>
+
+  <section class="ava-studio-dock-section representants">
+    <div class="ava-studio-section-head">
+      <div><strong>Avalynx Représentants</strong><span>Loja de MCPs e integrações</span></div>
+      <button type="button" id="openRepresentantsBtn">Explorar</button>
+    </div>
+    <div class="ava-representants-preview" id="avaRepresentantsPreview">
+      <button type="button" data-representant="gmail"><span>G</span><div><strong>Gmail</strong><small>E-mail e caixa de entrada</small></div></button>
+      <button type="button" data-representant="slack"><span>S</span><div><strong>Slack</strong><small>Mensagens e equipes</small></div></button>
+      <button type="button" data-representant="canva"><span>C</span><div><strong>Canva</strong><small>Design e conteúdo</small></div></button>
+      <button type="button" data-representant="adobe"><span>A</span><div><strong>Adobe</strong><small>Criação e documentos</small></div></button>
+      <button type="button" data-representant="zoom"><span>Z</span><div><strong>Zoom</strong><small>Reuniões e chamadas</small></div></button>
+    </div>
+  </section>
+</aside>
 
 </body>
 </html>

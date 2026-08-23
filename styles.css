@@ -2664,3 +2664,32 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
   .ava-setting-row{gap:12px}
   .ava-setting-row select,.ava-setting-row input[type="text"],.ava-setting-row input[type="email"]{min-width:120px;max-width:46%}
 }
+
+/* v6.8.6 — denser side-by-side settings layout */
+@media(min-width:900px){
+  .ava-settings-page.active{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;align-items:start}
+  .ava-settings-page.active>header{grid-column:1/-1}
+  .ava-settings-page.active>.ava-developer-output,
+  .ava-settings-page.active>.ava-settings-empty{grid-column:1/-1}
+  .ava-setting-group{margin-bottom:18px}
+}
+
+/* Avalynx Studio compact arrow + fixed dock */
+.ava-studio-chevron{display:inline-grid;place-items:center;margin-left:5px;font-size:14px;line-height:1;vertical-align:-1px;transition:transform .18s ease}
+.ava-studio-toggle{border:0;background:transparent;color:var(--text);font:inherit;cursor:pointer}
+.ava-studio-dock{position:fixed;z-index:1200;top:72px;right:16px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 92px);overflow:auto;padding:14px;border:1px solid var(--border);border-radius:18px;background:color-mix(in srgb,var(--panel) 96%,transparent);box-shadow:0 24px 80px rgba(0,0,0,.28);backdrop-filter:blur(18px);opacity:0;transform:translateX(18px) scale(.985);transition:opacity .18s ease,transform .18s ease}
+.ava-studio-dock.open{opacity:1;transform:none}
+.ava-studio-dock-head{display:flex;justify-content:space-between;align-items:center;padding:2px 2px 12px}
+.ava-studio-dock-head>div,.ava-studio-section-head>div{display:grid;gap:2px}
+.ava-studio-dock-head strong{font-size:13px}.ava-studio-dock-head span,.ava-studio-section-head span{font-size:9px;color:var(--muted)}
+.ava-studio-dock-head button{width:30px;height:30px;border:0;border-radius:9px;background:var(--soft);color:var(--text);font-size:17px}
+.ava-studio-dock-section{padding:12px 2px;border-top:1px solid var(--border)}
+.ava-studio-section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+.ava-studio-section-head strong{font-size:11px}.ava-studio-section-head button{border:1px solid var(--border);background:var(--soft);color:var(--text);border-radius:9px;padding:6px 9px;font-size:9px}
+.ava-studio-agent-list,.ava-representants-preview{display:grid;gap:6px}
+.ava-studio-agent-chip,.ava-representants-preview button{width:100%;display:flex;align-items:center;gap:9px;text-align:left;border:1px solid transparent;background:transparent;color:var(--text);border-radius:11px;padding:8px;cursor:pointer}
+.ava-studio-agent-chip:hover,.ava-representants-preview button:hover{background:var(--soft);border-color:var(--border)}
+.ava-studio-agent-chip>span,.ava-representants-preview button>span{width:31px;height:31px;display:grid;place-items:center;border-radius:9px;background:var(--soft);font-size:10px;font-weight:700}
+.ava-studio-agent-chip>div,.ava-representants-preview button>div{display:grid;gap:2px}.ava-studio-agent-chip strong,.ava-representants-preview strong{font-size:10px}.ava-studio-agent-chip small,.ava-representants-preview small{font-size:8px;color:var(--muted)}
+.ava-studio-empty{padding:15px 8px;color:var(--muted);font-size:9px;text-align:center}
+@media(max-width:720px){.ava-studio-dock{top:auto;bottom:10px;right:10px;left:10px;width:auto;max-height:72vh;border-radius:20px}}

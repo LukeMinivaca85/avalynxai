@@ -201,3 +201,7 @@ Adds expanded settings sections and confirmation before tel:, mailto:, app schem
 
 ## v6.8.5 — Settings Redesign
 Replaces the accordion-style settings UI with a native-feeling sidebar, searchable categories, one settings page at a time, clean row controls, responsive mobile navigation, and dedicated pages for models, Ava Code, MCPs, media, security, trusted contact, privacy and developer diagnostics.
+
+
+## v6.8.6 — Studio Dock + Représentants
+Settings groups can sit side-by-side on wide screens. Avalynx Studio now uses a compact chevron and opens a fixed dock with created Ava Agents. Adds Avalynx Représentants as the MCP/integration store surface.
