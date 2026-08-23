@@ -2610,3 +2610,57 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 .external-action-buttons button{border:1px solid var(--border);background:var(--soft);color:var(--text);padding:8px 11px;border-radius:10px}
 .external-action-buttons button.primary{background:var(--text);color:var(--bg)}
 .reduce-ava-motion *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+
+/* v6.8.5 — Avalynx Settings redesign */
+.ava-settings-shell{display:grid;grid-template-columns:220px minmax(0,1fr);height:min(680px,76vh);min-height:520px;margin:0 -2px;border:1px solid var(--border);border-radius:20px;overflow:hidden;background:var(--panel)}
+.ava-settings-sidebar{display:flex;flex-direction:column;min-width:0;padding:14px 10px;border-right:1px solid var(--border);background:color-mix(in srgb,var(--panel) 92%,var(--soft))}
+.ava-settings-search-wrap{height:36px;display:flex;align-items:center;gap:7px;padding:0 10px;margin:0 2px 10px;border:1px solid var(--border);border-radius:11px;background:var(--soft)}
+.ava-settings-search-icon{font-size:15px;color:var(--muted)}
+.ava-settings-search-wrap input{width:100%;min-width:0;border:0!important;outline:0;background:transparent!important;color:var(--text);font-size:11px;padding:0!important}
+.ava-settings-nav{display:flex;flex-direction:column;gap:2px;overflow:auto}
+.ava-settings-nav-spacer{height:10px}
+.ava-settings-nav-item{appearance:none;border:0;background:transparent;color:var(--text);display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:7px 9px;border-radius:9px;text-align:left;font-size:11px;cursor:pointer}
+.ava-settings-nav-item span{width:19px;text-align:center;color:var(--muted);font-size:13px}
+.ava-settings-nav-item:hover{background:var(--soft)}
+.ava-settings-nav-item.active{background:color-mix(in srgb,var(--soft) 82%,var(--text) 8%);font-weight:650}
+.ava-settings-nav-item.active span{color:var(--text)}
+.ava-settings-content{position:relative;overflow:auto;padding:26px 28px 36px;background:var(--panel)}
+.ava-settings-page{display:none;max-width:720px;margin:0 auto}
+.ava-settings-page.active{display:block}
+.ava-settings-page header{margin-bottom:22px}
+.ava-settings-page header h2{font-size:18px;line-height:1.2;margin:0 0 5px}
+.ava-settings-page header p{margin:0;color:var(--muted);font-size:10px;line-height:1.45}
+.ava-setting-group{border-top:1px solid var(--border);margin-bottom:24px}
+.ava-setting-row{min-height:58px;display:flex;align-items:center;justify-content:space-between;gap:22px;padding:10px 2px;border-bottom:1px solid var(--border);font-size:11px}
+.ava-setting-row>div:first-child{display:grid;gap:3px;min-width:0}
+.ava-setting-row strong{font-size:11px;font-weight:600}
+.ava-setting-row small{font-size:9px;color:var(--muted);line-height:1.4;max-width:440px}
+.ava-setting-row select,.ava-setting-row input[type="text"],.ava-setting-row input[type="email"]{min-width:145px;max-width:230px;border:1px solid var(--border);border-radius:9px;background:var(--soft);color:var(--text);padding:7px 9px;font-size:10px}
+.ava-setting-row input[type="color"]{width:28px;height:28px;border:0;background:transparent;padding:0}
+.ava-setting-row input[type="range"]{width:150px}
+.ava-switch{appearance:none!important;width:34px!important;height:20px!important;min-width:34px!important;border-radius:999px!important;background:color-mix(in srgb,var(--muted) 40%,transparent)!important;position:relative!important;border:0!important;cursor:pointer!important;transition:.18s ease!important}
+.ava-switch::after{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;border-radius:50%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.18s ease}
+.ava-switch:checked{background:var(--ava-user-accent,#4c8dff)!important}
+.ava-switch:checked::after{transform:translateX(14px)}
+.ava-settings-action{appearance:none;border:1px solid var(--border);border-radius:9px;background:var(--soft);color:var(--text);padding:7px 11px;font-size:10px;cursor:pointer}
+.ava-settings-action:hover{filter:brightness(1.06)}
+.ava-settings-action.subtle{background:transparent}
+.ava-setting-actions{display:flex!important;grid-template-columns:none!important;flex-direction:row;gap:7px}
+.ava-setting-status{font-size:9px;color:var(--muted);padding:5px 8px;border-radius:999px;background:var(--soft)}
+.ava-setting-status.safe{color:var(--text)}
+.ava-developer-output{display:block;min-height:70px;max-height:220px;overflow:auto;margin:8px 0 0;padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--soft);color:var(--muted);font-size:9px;white-space:pre-wrap}
+.ava-settings-mobile-back{display:none}
+.ava-settings-empty{display:none;text-align:center;padding:80px 20px;color:var(--muted)}
+.ava-settings-empty.active{display:grid;gap:7px;place-items:center}
+.ava-settings-empty div{font-size:28px}.ava-settings-empty strong{color:var(--text);font-size:12px}.ava-settings-empty span{font-size:10px}
+@media(max-width:720px){
+  .ava-settings-shell{display:block;height:min(720px,82vh);min-height:480px}
+  .ava-settings-sidebar{height:100%;border-right:0;padding:12px}
+  .ava-settings-content{display:none;height:100%;padding:16px 18px 30px}
+  .ava-settings-shell.mobile-page-open .ava-settings-sidebar{display:none}
+  .ava-settings-shell.mobile-page-open .ava-settings-content{display:block}
+  .ava-settings-mobile-back{display:inline-flex;border:0;background:transparent;color:var(--text);font-size:11px;padding:4px 0 16px;cursor:pointer}
+  .ava-settings-page{max-width:none}
+  .ava-setting-row{gap:12px}
+  .ava-setting-row select,.ava-setting-row input[type="text"],.ava-setting-row input[type="email"]{min-width:120px;max-width:46%}
+}

@@ -6101,7 +6101,7 @@ const AVA_PREFS_KEY="ava-settings-v684";
 function loadAvaSettingsCenter(){
   let prefs={};
   try{prefs=JSON.parse(localStorage.getItem(AVA_PREFS_KEY)||"{}")}catch{}
-  document.querySelectorAll(".settings-center-v684 [id]").forEach(el=>{
+  document.querySelectorAll(".ava-settings-shell [id]").forEach(el=>{
     if(!(el.id in prefs)) return;
     if(el.type==="checkbox")el.checked=Boolean(prefs[el.id]);
     else el.value=prefs[el.id];
@@ -6110,7 +6110,7 @@ function loadAvaSettingsCenter(){
 }
 function saveAvaSettingsCenter(){
   const prefs={};
-  document.querySelectorAll(".settings-center-v684 [id]").forEach(el=>{
+  document.querySelectorAll(".ava-settings-shell [id]").forEach(el=>{
     if(!["INPUT","SELECT"].includes(el.tagName))return;
     prefs[el.id]=el.type==="checkbox"?el.checked:el.value;
   });
@@ -6138,8 +6138,43 @@ async function settingsFetchDebug(path){
     return {ok:false,error:String(error?.message||error)};
   }
 }
+
+function openAvaSettingsPage(page){
+  const shell=document.querySelector("#avaSettingsShell");
+  if(!shell)return;
+  shell.querySelectorAll(".ava-settings-nav-item").forEach(btn=>btn.classList.toggle("active",btn.dataset.settingsPage===page));
+  shell.querySelectorAll(".ava-settings-page").forEach(panel=>panel.classList.toggle("active",panel.dataset.settingsPanel===page));
+  shell.classList.add("mobile-page-open");
+  shell.querySelector("#avaSettingsEmpty")?.classList.remove("active");
+}
+function setupAvaSettingsNavigation(){
+  const shell=document.querySelector("#avaSettingsShell");
+  if(!shell)return;
+  shell.querySelectorAll(".ava-settings-nav-item").forEach(btn=>btn.addEventListener("click",()=>openAvaSettingsPage(btn.dataset.settingsPage)));
+  shell.querySelector("#avaSettingsMobileBack")?.addEventListener("click",()=>shell.classList.remove("mobile-page-open"));
+  const search=shell.querySelector("#avaSettingsSearch");
+  search?.addEventListener("input",()=>{
+    const q=String(search.value||"").trim().toLowerCase();
+    const nav=[...shell.querySelectorAll(".ava-settings-nav-item")];
+    let matches=0;
+    nav.forEach(btn=>{
+      const page=btn.dataset.settingsPage;
+      const panel=shell.querySelector(`[data-settings-panel="${page}"]`);
+      const hay=(btn.textContent+" "+(panel?.textContent||"")).toLowerCase();
+      const show=!q||hay.includes(q);
+      btn.hidden=!show;
+      if(show)matches++;
+    });
+    shell.querySelector("#avaSettingsEmpty")?.classList.toggle("active",Boolean(q)&&matches===0);
+    if(q&&matches){
+      const first=nav.find(x=>!x.hidden);
+      if(first)openAvaSettingsPage(first.dataset.settingsPage);
+    }
+  });
+}
+
 function setupAvaSettingsCenter(){
-  document.querySelectorAll(".settings-center-v684 input,.settings-center-v684 select").forEach(el=>{
+  document.querySelectorAll(".ava-settings-shell input,.ava-settings-shell select").forEach(el=>{
     el.addEventListener("change",saveAvaSettingsCenter);
     el.addEventListener("input",()=>{if(el.type==="color"||el.type==="range")saveAvaSettingsCenter();});
   });
@@ -6156,6 +6191,7 @@ function setupAvaSettingsCenter(){
     localStorage.removeItem(AVA_PREFS_KEY); loadAvaSettingsCenter(); showToolGuard("Preferências locais da Avalynx removidas.");
   });
   loadAvaSettingsCenter();
+  setupAvaSettingsNavigation();
 }
 
 async function bootstrapAva() {

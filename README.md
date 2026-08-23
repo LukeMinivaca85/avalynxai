@@ -197,3 +197,7 @@ It makes a tiny real chat request and reports the upstream status/model without 
 
 ## v6.8.4 — Settings + safer external actions
 Adds expanded settings sections and confirmation before tel:, mailto:, app schemes and external web links. The CVV 188 action now offers Cancel, Copy 188, or Continue before opening a phone app.
+
+
+## v6.8.5 — Settings Redesign
+Replaces the accordion-style settings UI with a native-feeling sidebar, searchable categories, one settings page at a time, clean row controls, responsive mobile navigation, and dedicated pages for models, Ava Code, MCPs, media, security, trusted contact, privacy and developer diagnostics.
