@@ -193,3 +193,7 @@ New diagnostic endpoint:
 `GET /api/inference/nvidia-test`
 
 It makes a tiny real chat request and reports the upstream status/model without exposing the API key.
+
+
+## v6.8.4 — Settings + safer external actions
+Adds expanded settings sections and confirmation before tel:, mailto:, app schemes and external web links. The CVV 188 action now offers Cancel, Copy 188, or Continue before opening a phone app.

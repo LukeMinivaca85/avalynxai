@@ -2613,23 +2613,68 @@ function openExternalLinkWarning(url) {
   if (!dialog.open) dialog.showModal();
 }
 
-function wireSafeLinks(scope=document) {
-  scope.querySelectorAll('a[href]').forEach(a => {
-    if (a.dataset.avaSafeLink === "1") return;
-    a.dataset.avaSafeLink = "1";
-    a.setAttribute("rel","noopener noreferrer");
-    a.addEventListener("click", event => {
-      const href = a.href;
-      if (!href || href.startsWith("javascript:")) {
-        event.preventDefault();
-        return;
-      }
-      if (isTrustedAvaUrl(href)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openExternalLinkWarning(href);
-    });
-  });
+
+function externalActionInfo(href){
+  const value=String(href||"").trim();
+  if(/^tel:/i.test(value)) return {kind:"phone",title:"Abrir aplicativo de telefone?",detail:"Seu dispositivo poderá abrir um aplicativo capaz de realizar chamadas.",label:value.replace(/^tel:\+?55?/i,"")||"número"};
+  if(/^mailto:/i.test(value)) return {kind:"mail",title:"Abrir aplicativo de e-mail?",detail:"Seu dispositivo poderá abrir um aplicativo externo de e-mail.",label:"e-mail"};
+  if(/^(facetime|zoommtg|slack):/i.test(value)) return {kind:"app",title:"Abrir outro aplicativo?",detail:"Você está prestes a sair da Avalynx e abrir um aplicativo externo.",label:"aplicativo"};
+  if(/^https?:/i.test(value)) return {kind:"web",title:"Você está saindo da Avalynx",detail:"Este link leva a um site de terceiros. Verifique o endereço antes de continuar.",label:"site"};
+  return null;
+}
+
+function copyTextSafe(text){
+  if(navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); return Promise.resolve();
+}
+
+function confirmExternalAction(href){
+  const info=externalActionInfo(href);
+  if(!info){ location.href=href; return; }
+
+  let dialog=document.querySelector("#externalActionDialog");
+  if(!dialog){
+    dialog=document.createElement("dialog");
+    dialog.id="externalActionDialog";
+    dialog.className="external-action-dialog";
+    document.body.appendChild(dialog);
+  }
+
+  const isPhone=info.kind==="phone";
+  const phoneNumber=String(href).replace(/^tel:/i,"").replace(/^\+55/,"");
+  dialog.innerHTML=`
+    <div class="external-action-card">
+      <div class="external-action-icon">${isPhone?"☎":"↗"}</div>
+      <h3>${escapeHtml(info.title)}</h3>
+      <p>${escapeHtml(info.detail)}</p>
+      ${isPhone?`<div class="external-action-target">CVV · ${escapeHtml(phoneNumber)}</div>`:`<div class="external-action-target">${escapeHtml(String(href).replace(/^https?:\/\//,"").slice(0,100))}</div>`}
+      <div class="external-action-buttons">
+        <button type="button" data-action="cancel">Cancelar</button>
+        ${isPhone?`<button type="button" data-action="copy">Copiar ${escapeHtml(phoneNumber)}</button>`:""}
+        <button type="button" class="primary" data-action="continue">Continuar</button>
+      </div>
+    </div>`;
+  dialog.querySelector('[data-action="cancel"]').onclick=()=>dialog.close();
+  if(isPhone) dialog.querySelector('[data-action="copy"]').onclick=async()=>{await copyTextSafe(phoneNumber); dialog.close(); showToolGuard(`${phoneNumber} copiado.`);};
+  dialog.querySelector('[data-action="continue"]').onclick=()=>{dialog.close(); window.location.href=href;};
+  dialog.showModal();
+}
+
+function setupExternalActionGuard(){
+  document.addEventListener("click",event=>{
+    const a=event.target.closest?.("a[href]");
+    if(!a) return;
+    const href=a.getAttribute("href")||"";
+    if(!/^(tel:|mailto:|facetime:|zoommtg:|slack:|https?:)/i.test(href)) return;
+    if(a.dataset.avalynxGuard==="off") return;
+    event.preventDefault();
+    confirmExternalAction(href);
+  },true);
+}
+
+function wireSafeLinks(root=document){
+  // Universal external-action protection is installed once by setupExternalActionGuard().
+  return root;
 }
 
 function finalizeRichMessage(scope) {
@@ -6051,10 +6096,74 @@ function setupTechnicalSecretInputs() {
 function syncTrustedContactSettings(){const saved=safetyTrustedContact();const name=document.querySelector("#trustedContactNameInput"),email=document.querySelector("#trustedContactEmailInput");if(name)name.value=saved?.name||"";if(email)email.value=saved?.email||"";}
 function setupTrustedContactSettings(){const save=document.querySelector("#saveTrustedContactBtn"),clear=document.querySelector("#clearTrustedContactBtn");if(save)save.onclick=()=>{const name=document.querySelector("#trustedContactNameInput")?.value||"Pessoa de confiança";const email=document.querySelector("#trustedContactEmailInput")?.value||"";if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){showToolGuard("Digite um e-mail válido para a pessoa de confiança.");return;}setSafetyTrustedContact(name,email);showToolGuard(email?"Pessoa de confiança salva neste aparelho.":"Pessoa de confiança removida.");};if(clear)clear.onclick=()=>{setSafetyTrustedContact("","");syncTrustedContactSettings();showToolGuard("Pessoa de confiança removida.");};syncTrustedContactSettings();}
 
+
+const AVA_PREFS_KEY="ava-settings-v684";
+function loadAvaSettingsCenter(){
+  let prefs={};
+  try{prefs=JSON.parse(localStorage.getItem(AVA_PREFS_KEY)||"{}")}catch{}
+  document.querySelectorAll(".settings-center-v684 [id]").forEach(el=>{
+    if(!(el.id in prefs)) return;
+    if(el.type==="checkbox")el.checked=Boolean(prefs[el.id]);
+    else el.value=prefs[el.id];
+  });
+  applyAvaSettingsCenter();
+}
+function saveAvaSettingsCenter(){
+  const prefs={};
+  document.querySelectorAll(".settings-center-v684 [id]").forEach(el=>{
+    if(!["INPUT","SELECT"].includes(el.tagName))return;
+    prefs[el.id]=el.type==="checkbox"?el.checked:el.value;
+  });
+  localStorage.setItem(AVA_PREFS_KEY,JSON.stringify(prefs));
+  applyAvaSettingsCenter();
+}
+function applyAvaSettingsCenter(){
+  const root=document.documentElement;
+  const appearance=document.querySelector("#avaAppearanceSetting")?.value||"system";
+  root.dataset.avaAppearance=appearance;
+  root.dataset.avaContrast=document.querySelector("#avaContrastSetting")?.value||"system";
+  root.style.setProperty("--ava-user-accent",document.querySelector("#avaAccentSetting")?.value||"#4c8dff");
+  document.body.classList.toggle("reduce-ava-motion",document.querySelector("#avaAnimationsSetting")?.checked===false);
+}
+async function settingsFetchDebug(path){
+  const out=document.querySelector("#developerSettingsOutput");
+  if(out)out.textContent="Carregando…";
+  try{
+    const r=await fetch(path,{headers:{accept:"application/json"}});
+    const text=await r.text();
+    if(out)out.textContent=text.slice(0,12000);
+    return {ok:r.ok,status:r.status,text};
+  }catch(error){
+    if(out)out.textContent=String(error?.message||error);
+    return {ok:false,error:String(error?.message||error)};
+  }
+}
+function setupAvaSettingsCenter(){
+  document.querySelectorAll(".settings-center-v684 input,.settings-center-v684 select").forEach(el=>{
+    el.addEventListener("change",saveAvaSettingsCenter);
+    el.addEventListener("input",()=>{if(el.type==="color"||el.type==="range")saveAvaSettingsCenter();});
+  });
+  document.querySelector("#testNvidiaSettingsBtn")?.addEventListener("click",async()=>{
+    const status=document.querySelector("#nvidiaSettingsStatus");
+    if(status)status.textContent="Testando NVIDIA…";
+    const result=await debugNvidiaProvider();
+    if(status)status.textContent=result.ok?`NVIDIA OK · ${result.model||"modelo configurado"}`:`NVIDIA falhou · ${result.upstreamStatus||result.error||"erro"}`;
+  });
+  document.querySelector("#devConfigBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/config"));
+  document.querySelector("#devModelsBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/models"));
+  document.querySelector("#devNvidiaBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/inference/nvidia-test"));
+  document.querySelector("#clearLocalPrefsBtn")?.addEventListener("click",()=>{
+    localStorage.removeItem(AVA_PREFS_KEY); loadAvaSettingsCenter(); showToolGuard("Preferências locais da Avalynx removidas.");
+  });
+  loadAvaSettingsCenter();
+}
+
 async function bootstrapAva() {
   setupIOSPWA();
   setupTechnicalSecretInputs();
+  setupExternalActionGuard();
   setupTrustedContactSettings();
+  setupAvaSettingsCenter();
   loadState();
 
   const routed = activateChatFromURL();

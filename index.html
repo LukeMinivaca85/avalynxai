@@ -470,6 +470,91 @@
       </div>
     </form>
   
+
+<section class="settings-center-v684">
+  <div class="settings-center-title">Configurações da Avalynx</div>
+  <div class="settings-center-grid">
+    <details open><summary>Geral</summary>
+      <label>Aparência<select id="avaAppearanceSetting"><option value="system">Sistema</option><option value="light">Claro</option><option value="dark">Escuro</option></select></label>
+      <label>Contraste<select id="avaContrastSetting"><option value="system">Sistema</option><option value="normal">Normal</option><option value="high">Alto</option></select></label>
+      <label>Cor de ênfase<input id="avaAccentSetting" type="color" value="#4c8dff"></label>
+      <label>Idioma<select id="avaLanguageSetting"><option value="auto">Autodetectar</option><option value="pt-BR">Português (Brasil)</option><option value="en">English</option><option value="es">Español</option></select></label>
+      <label class="toggle-row">Animações<input id="avaAnimationsSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Sons da interface<input id="avaSoundsSetting" type="checkbox"></label>
+    </details>
+
+    <details><summary>Notificações</summary>
+      <label class="toggle-row">Respostas concluídas<input id="avaNotifyResponses" type="checkbox"></label>
+      <label class="toggle-row">Ava Code concluído<input id="avaNotifyCode" type="checkbox"></label>
+      <label class="toggle-row">Agentes e tarefas<input id="avaNotifyAgents" type="checkbox"></label>
+    </details>
+
+    <details><summary>Personalização</summary>
+      <label>Como a Ava deve chamar você<input id="avaUserNameSetting" autocomplete="off"></label>
+      <label>Personalidade<select id="avaPersonalitySetting"><option>Equilibrada</option><option>Direta</option><option>Didática</option><option>Criativa</option></select></label>
+      <label class="toggle-row">Memória local<input id="avaMemorySetting" type="checkbox" checked></label>
+    </details>
+
+    <details><summary>Modelos e IA</summary>
+      <label>Provider preferencial<select id="avaProviderSetting"><option value="auto">Automático</option><option value="nvidia">NVIDIA NIM</option><option value="huggingface">Hugging Face</option><option value="google">Google AI</option></select></label>
+      <label class="toggle-row">Fallback automático<input id="avaFallbackSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Mostrar modelo usado<input id="avaShowModelSetting" type="checkbox"></label>
+      <button type="button" id="testNvidiaSettingsBtn" class="secondary-btn">Testar NVIDIA NIM</button>
+      <div id="nvidiaSettingsStatus" class="settings-tip">Diagnóstico disponível sem expor sua chave.</div>
+    </details>
+
+    <details><summary>Voz</summary>
+      <label class="toggle-row">Reprodução automática<input id="avaVoiceAutoSetting" type="checkbox"></label>
+      <label>Velocidade<input id="avaVoiceSpeedSetting" type="range" min=".75" max="1.5" step=".05" value="1"></label>
+    </details>
+
+    <details><summary>Ava Code</summary>
+      <label class="toggle-row">Permitir edição de arquivos<input id="avaCodeEditSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Executar testes permitidos<input id="avaCodeTestsSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Confirmar antes de comandos<input id="avaCodeConfirmSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Mostrar diff<input id="avaCodeDiffSetting" type="checkbox" checked></label>
+      <div class="settings-tip">O Native Code Engine deve operar apenas no workspace isolado.</div>
+    </details>
+
+    <details><summary>Web</summary>
+      <label class="toggle-row">Pesquisa na web<input id="avaWebSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Mostrar citações<input id="avaCitationsSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Avisar antes de abrir sites externos<input id="avaExternalWebGuardSetting" type="checkbox" checked disabled></label>
+    </details>
+
+    <details><summary>Plugins e MCPs</summary>
+      <label class="toggle-row">Suporte a MCP<input id="avaMcpSetting" type="checkbox" checked></label>
+      <button type="button" class="secondary-btn" data-open-studio="mcp">Abrir loja de MCPs</button>
+    </details>
+
+    <details><summary>Mídia</summary>
+      <label>Provider preferencial<select id="avaMediaProviderSetting"><option value="google">Google AI primeiro</option><option value="auto">Automático</option><option value="huggingface">Hugging Face</option></select></label>
+      <label class="toggle-row">Imagem<input id="avaImageSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Vídeo<input id="avaVideoSetting" type="checkbox" checked></label>
+      <label class="toggle-row">Música<input id="avaMusicSetting" type="checkbox" checked></label>
+    </details>
+
+    <details><summary>Segurança</summary>
+      <label class="toggle-row">Proteção de links externos<input type="checkbox" checked disabled></label>
+      <label class="toggle-row">Confirmar antes de abrir outros apps<input type="checkbox" checked disabled></label>
+      <label class="toggle-row">Nunca contatar terceiros automaticamente<input type="checkbox" checked disabled></label>
+      <div class="settings-tip">Links <code>tel:</code>, e-mail, FaceTime, Zoom, Slack e sites externos exigem confirmação. Para telefone, a pessoa também pode apenas copiar o número.</div>
+    </details>
+
+    <details><summary>Dados e privacidade</summary>
+      <label class="toggle-row">Salvar histórico local<input id="avaHistorySetting" type="checkbox" checked></label>
+      <button type="button" id="clearLocalPrefsBtn" class="secondary-btn">Limpar preferências locais</button>
+    </details>
+
+    <details><summary>Desenvolvedor</summary>
+      <button type="button" id="devConfigBtn" class="secondary-btn">Ver /api/config</button>
+      <button type="button" id="devModelsBtn" class="secondary-btn">Ver /api/models</button>
+      <button type="button" id="devNvidiaBtn" class="secondary-btn">Diagnóstico NVIDIA</button>
+      <pre id="developerSettingsOutput" class="developer-output"></pre>
+    </details>
+  </div>
+</section>
+
 <div class="settings-section safety-contact-settings"><div class="settings-section-title">Pessoa de confiança (opcional)</div><p class="settings-tip">Fica salvo somente neste aparelho. A Avalynx nunca envia mensagens automaticamente.</p><label class="field"><span>Nome</span><input id="trustedContactNameInput" type="text" autocomplete="off" placeholder="Pessoa de confiança"></label><label class="field"><span>E-mail</span><input id="trustedContactEmailInput" type="email" autocomplete="off" data-1p-ignore="true" data-lpignore="true" data-form-type="other" placeholder="nome@exemplo.com"></label><div class="row-actions"><button id="saveTrustedContactBtn" class="secondary-btn" type="button">Salvar contato</button><button id="clearTrustedContactBtn" class="secondary-btn" type="button">Remover</button></div></div>
 </dialog>
 
