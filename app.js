@@ -1458,7 +1458,7 @@ async function generateImageResponse(chat, promptText) {
   }
 
   state.generating = true;
-  state.controller = new AbortController();
+  const controller = beginGenerationController();
   els.sendIcon.textContent = "■";
   els.send.title = "Parar";
 
@@ -1504,7 +1504,7 @@ async function generateImageResponse(chat, promptText) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify(body),
-      signal: state.controller.signal
+      signal: generationSignal(controller)
     });
 
     if (!res.ok) {
@@ -1577,7 +1577,7 @@ async function openMediaStudio(capability) {
 
 async function generateMediaResponse(chat,promptText,capability,modelId){
   state.generating=true;
-  state.controller=new AbortController();
+  const controller=beginGenerationController();
   els.sendIcon.textContent="■";
   els.send.title="Parar";
 
@@ -1599,7 +1599,7 @@ async function generateMediaResponse(chat,promptText,capability,modelId){
     const res=await fetch(`/api/inference/${capability}`,{
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({model:modelId,input:{prompt:promptText}}),
-      signal:state.controller.signal
+      signal:generationSignal(controller)
     });
     const data=await res.json().catch(()=>({}));
     if(!res.ok)throw Object.assign(new Error(data.error||`${res.status}`),{status:res.status});
@@ -1618,7 +1618,7 @@ async function generateMediaResponse(chat,promptText,capability,modelId){
       ? "Geração interrompida."
       : `Não consegui gerar ${capability==="video"?"o vídeo":"a música"}.\n\n\`${String(err.message||err)}\``;
   }finally{
-    state.generating=false;state.controller=null;els.sendIcon.textContent="↑";els.send.title="Enviar";
+    state.generating=false;endGenerationController(controller);els.sendIcon.textContent="↑";els.send.title="Enviar";
     contentNode.classList.remove("typing-cursor");assistantMsg.content=cleanSvgTextArtifacts(assistantMsg.content);
     contentNode.innerHTML=renderMarkdown(assistantMsg.content);
     finalizeRichMessage(node);renderMessageExtras(node,assistantMsg);wireSafeLinks(node);
@@ -4894,7 +4894,7 @@ ${userText}`;
     method:"POST",
     headers:{"content-type":"application/json"},
     body:JSON.stringify({instruction,files}),
-    signal:state.controller.signal
+    signal:generationSignal(state.controller)
   });
   const data=await res.json().catch(()=>({}));
 
@@ -4948,9 +4948,35 @@ ${data.summary||"Alterações concluídas."}${fileList}${downloadList}`,
   };
 }
 
+
+function beginGenerationController(){
+  // Always create a fresh controller for this generation.
+  const controller=new AbortController();
+  state.controller=controller;
+  return controller;
+}
+
+function generationSignal(controller){
+  return controller?.signal || undefined;
+}
+
+function isActiveGenerationController(controller){
+  return Boolean(controller && state.controller===controller && !controller.signal.aborted);
+}
+
+function endGenerationController(controller){
+  // Never let an older request clear the controller of a newer request.
+  if(state.controller===controller) state.controller=null;
+}
+
+function safeFetchOptions(options={},controller=null){
+  const signal=generationSignal(controller);
+  return signal ? {...options,signal} : {...options};
+}
+
 async function generateAvaCode(chat,requestContext=null){
   state.generating=true;
-  state.controller=new AbortController();
+  const controller=beginGenerationController();
   els.sendIcon.textContent="■";
   els.send.title="Parar";
 
@@ -5100,7 +5126,7 @@ Fall back to other Hugging Face tool-capable coding models before using other pr
             method:"POST",
             headers:{"content-type":"application/json"},
             body:JSON.stringify(requestBody),
-            signal:state.controller.signal
+            signal:generationSignal(controller)
           });
 
           const data=await response.json().catch(()=>({}));
@@ -5192,7 +5218,7 @@ Fall back to other Hugging Face tool-capable coding models before using other pr
           method:"POST",
           headers:{"content-type":"application/json"},
           body:JSON.stringify(forcedBody),
-          signal:state.controller.signal
+          signal:generationSignal(controller)
         });
 
         const forcedPayload=await forcedResponse.json().catch(()=>({}));
@@ -5257,8 +5283,8 @@ Fall back to other Hugging Face tool-capable coding models before using other pr
     thinking.classList.add("error");
     persist();
   }finally{
-    state.generating=false;
-    state.controller=null;
+    if(state.controller===controller || !state.controller) state.generating=false;
+    endGenerationController(controller);
     els.sendIcon.textContent="↑";
     els.send.title="Enviar";
     renderChatList();
@@ -5275,6 +5301,8 @@ async function continueLongResponse(chat,msg,model,ctx,signal){
 
 
 async function maybeRunChatMcp(chat, requestContext, signal) {
+  const activeSignal = signal && typeof signal === "object" ? signal : undefined;
+
   if(!state.modelCatalog.length) await loadModelCatalog(false);
   const toolData = await fetchMcpTools().catch(() => ({tools:[]}));
   let mcpTools = toolData.tools || [];
@@ -5362,7 +5390,7 @@ function setupMemoryUI(){document.querySelector("#refreshMemoriesBtn")?.addEvent
 
 async function generateAssistant(chat, requestContext = null) {
   state.generating = true;
-  state.controller = new AbortController();
+  const controller = beginGenerationController();
   els.sendIcon.textContent = "■";
   els.send.title = "Parar";
 
@@ -5378,7 +5406,7 @@ async function generateAssistant(chat, requestContext = null) {
   try {
     if (!state.modelCatalog.length) await loadModelCatalog(false);
 
-    const mcpAnswer = await maybeRunChatMcp(chat, requestContext, state.controller.signal);
+    const mcpAnswer = await maybeRunChatMcp(chat, requestContext, generationSignal(controller));
     if (mcpAnswer) {
       assistantMsg.content = mcpAnswer;
       contentNode.innerHTML = renderMarkdown(assistantMsg.content);
@@ -5425,12 +5453,11 @@ The user explicitly requested live web information. If no live search MCP tool w
         });
       }
 
-      const attempt=await fetch("/api/inference/chat",{
+      const attempt=await fetch("/api/inference/chat",safeFetchOptions({
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(body),
-        signal:state.controller.signal
-      });
+        body:JSON.stringify(body)
+      },controller));
 
       if(attempt.ok){
         res=attempt;
@@ -5507,7 +5534,7 @@ The user explicitly requested live web information. If no live search MCP tool w
 
     if(!assistantMsg.content)assistantMsg.content="A resposta terminou sem conteúdo de texto.";
     if(assistantMsg.finishReason==="length"){
-      await continueLongResponse(chat,assistantMsg,selectedModel,requestContext,state.controller.signal);
+      await continueLongResponse(chat,assistantMsg,selectedModel,requestContext,generationSignal(controller));
     }
   } catch(err) {
     if(err.name==="AbortError"){
@@ -5530,8 +5557,10 @@ A credencial do provider foi recusada pelo backend.
 \`Avalynx Model Router ${err.status||"erro"}: ${String(err.message||err)}\``;
     }
   } finally {
-    state.generating=false;
-    state.controller=null;
+    if(isActiveGenerationController(controller) || state.controller===controller){
+      state.generating=false;
+    }
+    endGenerationController(controller);
     els.sendIcon.textContent="↑";
     els.send.title="Enviar";
     contentNode.classList.remove("typing-cursor");
@@ -5554,7 +5583,14 @@ A credencial do provider foi recusada pelo backend.
 }
 
 function stopGeneration() {
-  state.controller?.abort();
+  const controller=state.controller;
+  if(controller && !controller.signal.aborted){
+    try{controller.abort("user-stop")}catch{}
+  }
+  if(state.controller===controller)state.controller=null;
+  state.generating=false;
+  els.sendIcon.textContent="↑";
+  els.send.title="Enviar";
 }
 
 async function regenerateFrom(messageId) {
@@ -6283,6 +6319,26 @@ function setupAvaStudioDock(){
   renderCreatedAvaAgents();
 }
 
+
+function installAvalynxRuntimeGuard(){
+  window.addEventListener("unhandledrejection",event=>{
+    const reason=event?.reason;
+    console.error("[Avalynx] unhandled rejection",reason);
+    const message=String(reason?.message||reason||"Erro inesperado");
+    if(/Cannot read properties of null.*signal/i.test(message)){
+      event.preventDefault?.();
+      showToolGuard("A geração foi interrompida com segurança. Tente novamente.");
+    }
+  });
+  window.addEventListener("error",event=>{
+    const message=String(event?.error?.message||event?.message||"");
+    if(/Cannot read properties of null.*signal/i.test(message)){
+      console.error("[Avalynx] prevented controller crash",event.error||event);
+      showToolGuard("A geração foi interrompida com segurança. Tente novamente.");
+    }
+  });
+}
+
 async function bootstrapAva() {
   setupIOSPWA();
   setupTechnicalSecretInputs();
@@ -6291,6 +6347,7 @@ async function bootstrapAva() {
   setupAvaSettingsCenter();
   setupAvaStudioDock();
   setupMemoryUI();
+  installAvalynxRuntimeGuard();
   loadState();
 
   const routed = activateChatFromURL();

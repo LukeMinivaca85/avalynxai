@@ -209,3 +209,21 @@ Settings groups can sit side-by-side on wide screens. Avalynx Studio now uses a 
 
 ## v6.9 — Avalynx Memory
 Adds cross-chat memory backed by Supabase with user, project, and temporary scopes; relevant retrieval before Chat/Ava Code responses; conservative automatic writes; a Memory settings page; delete/clear controls; and a per-chat “Não lembrar deste chat” toggle. Run `supabase/avalynx_memory.sql` and configure `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. Before multi-user production, replace the local fallback memory user ID with a verified server-side authenticated user identity.
+
+
+## v6.9.1 — Stability Fix
+
+Fixes the generation crash:
+`Cannot read properties of null (reading 'signal')`.
+
+Changes:
+- Every generation now receives its own `AbortController`.
+- Older requests cannot clear the controller of a newer request.
+- Optional signals are passed only when they actually exist.
+- Chat, Ava Code, image/media generation, MCP tool calls, and long-response continuation use controller-safe signals.
+- Stop Generation safely aborts only the current generation.
+- Runtime guards prevent a controller race from taking down the whole conversation UI.
+- Memory retrieval remains non-fatal: a memory backend failure cannot prevent Chat/Code from answering.
+- Existing model fallbacks remain active.
+
+The goal is graceful degradation: a failed provider, memory lookup, tool, or aborted request should fail that operation, not the entire Avalynx session.
