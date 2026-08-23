@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v6.9.1-stability";
+const CACHE = "ava-i-shell-v6.9.2-auto-web";
 const ASSETS = [
   "/",
   "/index.html",

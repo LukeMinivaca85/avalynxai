@@ -981,6 +981,15 @@ function capitalizeFirstLetter(text) {
   return s.replace(/\p{L}/u, ch => ch.toLocaleUpperCase("pt-BR"));
 }
 
+
+function showAutomaticWebActivity(active){
+  const btn=els.webToolBtn;
+  if(!btn)return;
+  btn.classList.toggle("auto-active",Boolean(active));
+  const span=btn.querySelector("span");
+  if(span && !state.webSearchActive) span.textContent=active?"Web auto":"Web";
+}
+
 function updateToolUI() {
   if (!els.webToolBtn || !els.imageToolBtn) return;
 
@@ -5388,6 +5397,68 @@ async function rememberFromUserMessage(text,chat){const c=memoryCandidateFromMes
 async function renderMemorySettingsList(){const list=document.querySelector("#avaMemoryList");if(!list)return;list.innerHTML='<div class="ava-memory-loading">Carregando memórias…</div>';try{const r=await fetch("/api/memory?limit=40",{headers:memoryHeaders()});const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);const rows=Array.isArray(data.data)?data.data:[];if(!rows.length){list.innerHTML='<div class="ava-memory-empty">Nenhuma memória salva ainda.</div>';return}list.innerHTML=rows.map(m=>`<article class="ava-memory-item"><div><span class="ava-memory-scope">${escapeHtml(m.scope)}</span><strong>${escapeHtml(m.content)}</strong><small>${m.expires_at?`Expira ${new Date(m.expires_at).toLocaleDateString()}`:"Sem expiração"}</small></div><button type="button" data-delete-memory="${escapeHtml(m.id)}">Remover</button></article>`).join("");list.querySelectorAll("[data-delete-memory]").forEach(btn=>btn.onclick=async()=>{await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"delete",id:btn.dataset.deleteMemory,user_id:avalynxMemoryUserId()})});renderMemorySettingsList()})}catch(error){list.innerHTML=`<div class="ava-memory-empty">Memória indisponível: ${escapeHtml(String(error.message||error))}</div>`}}
 function setupMemoryUI(){document.querySelector("#refreshMemoriesBtn")?.addEventListener("click",renderMemorySettingsList);document.querySelector("#clearAllMemoriesBtn")?.addEventListener("click",async()=>{if(!confirm("Limpar todas as memórias da Avalynx neste perfil?"))return;await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"clear",user_id:avalynxMemoryUserId()})});renderMemorySettingsList()});document.querySelector("#dontRememberChatBtn")?.addEventListener("click",()=>{const chat=activeChat?.();if(!chat)return;chat.memoryDisabled=!chat.memoryDisabled;const btn=document.querySelector("#dontRememberChatBtn");btn.classList.toggle("off",chat.memoryDisabled);btn.setAttribute("aria-pressed",String(chat.memoryDisabled));btn.textContent=chat.memoryDisabled?"✦ Memória desligada":"✦ Memória";persist()})}
 
+
+function shouldAutoSearchWeb(text){
+  const t=String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(!t.trim())return false;
+
+  const explicit=/\b(pesquise|pesquisar|procure|buscar|busque|na web|na internet|web search|search the web|look up|find online)\b/i.test(t);
+  const freshness=/\b(hoje|agora|atualmente|atual|mais recente|ultim[oa]s?|novidade|noticia|noticias|esta semana|este mes|2026|latest|today|current|recent|news|this week|this month)\b/i.test(t);
+  const volatile=/\b(preco|cotacao|valor hoje|clima|tempo em|placar|resultado|agenda|horario|aberto agora|lancamento|versao atual|CEO atual|presidente atual|status|outage|indisponivel|morreu|vazou|eleicao|mercado|bolsa|cripto|bitcoin)\b/i.test(t);
+  const namedCurrent=/\b(openai|nvidia|google|microsoft|apple|meta|anthropic|amd|intel|disney|pixar|rockstar|github|hugging face|huggingface)\b/i.test(t) && freshness;
+
+  return explicit || freshness || volatile || namedCurrent;
+}
+
+async function avalynxNativeWebSearch(query,signal){
+  const r=await fetch("/api/web-search",{
+    method:"POST",
+    headers:{"content-type":"application/json","accept":"application/json"},
+    body:JSON.stringify({q:query,limit:6}),
+    ...(signal?{signal}:{})
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!Array.isArray(data.results)||!data.results.length){
+    throw new Error(data.error||data.errors?.join("; ")||`Web Engine ${r.status}`);
+  }
+  return data;
+}
+
+function webSearchContextBlock(data){
+  const results=Array.isArray(data?.results)?data.results:[];
+  if(!results.length)return "";
+  return `LIVE WEB SEARCH RESULTS
+Search time: ${data.searchedAt||new Date().toISOString()}
+Query: ${data.query||""}
+
+${results.map((r,i)=>`[${i+1}] ${r.title}
+URL: ${r.url}
+Snippet: ${r.snippet||""}`).join("\n\n")}
+
+INSTRUCTIONS:
+- Use these live results when answering current/fresh questions.
+- Cite factual claims from the search using inline markers like [1], [2].
+- At the end, include a short "Fontes" list with the cited URLs.
+- Do not invent details that are not supported by the results.
+- If results are insufficient, say so clearly.`;
+}
+
+async function maybeAutoSearchForTurn(chat,userText,controller){
+  const manual=Boolean(state.webSearchActive);
+  const autoSetting=document.querySelector("#avaAutoWebSetting");
+  const automatic=(autoSetting ? autoSetting.checked : true) && shouldAutoSearchWeb(userText);
+  if(!manual&&!automatic)return {used:false,context:"",annotations:[]};
+
+  try{
+    const data=await avalynxNativeWebSearch(userText,generationSignal(controller));
+    const annotations=(data.results||[]).map(r=>({title:r.title,url:r.url}));
+    return {used:true,context:webSearchContextBlock(data),annotations,data,automatic};
+  }catch(error){
+    console.warn("[Avalynx Web] native search failed",error);
+    return {used:false,failed:true,error:String(error?.message||error),context:"",annotations:[],automatic};
+  }
+}
+
 async function generateAssistant(chat, requestContext = null) {
   state.generating = true;
   const controller = beginGenerationController();
@@ -5405,6 +5476,17 @@ async function generateAssistant(chat, requestContext = null) {
 
   try {
     if (!state.modelCatalog.length) await loadModelCatalog(false);
+
+    const latestUserForWeb=[...chat.messages].reverse().find(m=>m.role==="user");
+    const autoWebNeeded=!state.webSearchActive&&shouldAutoSearchWeb(latestUserForWeb?.content||"");
+    showAutomaticWebActivity(autoWebNeeded);
+    const webTurn=await maybeAutoSearchForTurn(chat,latestUserForWeb?.content||"",controller);
+    showAutomaticWebActivity(false);
+    if(webTurn.used){
+      assistantMsg.webSearchUsed=true;
+      assistantMsg.webSearchAutomatic=Boolean(webTurn.automatic);
+      assistantMsg.annotations=webTurn.annotations;
+    }
 
     const mcpAnswer = await maybeRunChatMcp(chat, requestContext, generationSignal(controller));
     if (mcpAnswer) {
@@ -5436,9 +5518,14 @@ async function generateAssistant(chat, requestContext = null) {
     let lastError=null;
 
     for (const candidateModel of candidates) {
+      const baseMessages=toApiMessages(chat,requestContext).slice(0,-1);
       const body={
         model:candidateModel,
-        messages:toApiMessages(chat,requestContext).slice(0,-1),
+        messages:[
+          ...(webTurn?.context?[{role:"system",content:webTurn.context}]:[]),
+          ...(webTurn?.failed?[{role:"system",content:"Automatic live web search was attempted for this current-information request but failed. Do not pretend your internal knowledge is current; explicitly say live search was unavailable if freshness matters."}]:[]),
+          ...baseMessages
+        ],
         stream:true,
         max_tokens:65536
       };
@@ -5566,7 +5653,7 @@ A credencial do provider foi recusada pelo backend.
     contentNode.classList.remove("typing-cursor");
 
     const lastUserForWebCheck=[...chat.messages].reverse().find(m=>m.role==="user");
-    if(lastUserForWebCheck?.webSearch&&!(assistantMsg.annotations||[]).length){
+    if(lastUserForWebCheck?.webSearch&&!assistantMsg.webSearchUsed&&!(assistantMsg.annotations||[]).length){
       assistantMsg.content=`⚠️ A pesquisa web foi solicitada, mas esta resposta não trouxe fontes citáveis. Não trate informações atuais como confirmadas sem uma ferramenta de busca conectada.\n\n${assistantMsg.content}`;
     }
 

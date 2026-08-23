@@ -227,3 +227,23 @@ Changes:
 - Existing model fallbacks remain active.
 
 The goal is graceful degradation: a failed provider, memory lookup, tool, or aborted request should fail that operation, not the entire Avalynx session.
+
+
+## v6.9.2 — Automatic Avalynx Web Engine
+
+Adds a native server-side web search route at `/api/web-search`.
+
+The Ava automatically searches when a prompt contains:
+- explicit search intent
+- current/fresh terms such as today, now, latest, current, recent, news
+- volatile data such as prices, weather, scores, outages, current company/public-figure status, releases, elections, markets, etc.
+
+Flow:
+1. Automatic freshness detector decides whether live search is needed.
+2. Avalynx Web Engine searches server-side.
+3. Results are injected into the model as a live-source context block.
+4. The model is instructed to cite sources with [1], [2] markers and a Fontes list.
+5. If native search fails, the model is explicitly told not to pretend its knowledge is current.
+6. Manual Web mode still works and forces a search.
+
+The search backend uses DuckDuckGo HTML results with a Wikipedia fallback. This avoids requiring a separate paid search API key, but public endpoints can change or rate-limit; production deployments should eventually support a dedicated search provider as an additional backend.
