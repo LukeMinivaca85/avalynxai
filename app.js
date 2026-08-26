@@ -5091,7 +5091,8 @@ Fall back to other Hugging Face tool-capable coding models before using other pr
 
           const data=await response.json().catch(()=>({}));
 
-          if(!response.ok){
+          recordInstantTiming(assistantMsg,instantStart,performance.now());
+      if(!response.ok){
             const rawError = data?.error?.message || data?.error || `Avalynx Router ${response.status}`;
             const errorText = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
 
@@ -5593,6 +5594,9 @@ async function consumeAssistantResponse(res,assistantMsg,contentNode){
           const delta=choice.delta||{};
           if(delta.tool_calls)accumulateToolCallDeltas(toolCalls,delta.tool_calls);
           if(typeof delta.content==="string"){
+            if(delta.content && assistantMsg.performance && assistantMsg.performance.firstTokenMs==null){
+              assistantMsg.performance.firstTokenMs=Math.max(0,performance.now()-assistantMsg.performance.requestStartMs);
+            }
             assistantMsg.content+=delta.content;
             contentNode.innerHTML=renderMarkdown(contentWithoutPendingWidgets(stripInternalToolLeak(assistantMsg.content)));
             finalizeRichMessage(contentNode.closest(".message")||contentNode.parentElement);
@@ -5625,6 +5629,26 @@ function composeLayeredMessages(chat,requestContext,{toolTurn,memoryBlock}={}){
   ];
 }
 
+
+const AVA_INSTANT_CHAT_MODEL="nvidia/nemotron-3-ultra-550b-a55b";
+
+function preferredInstantChatModel(){
+  const models=modelsForCapability("chat");
+  const exact=models.find(m=>m.id===AVA_INSTANT_CHAT_MODEL);
+  if(exact)return exact.id;
+  const nemotron=models.find(m=>/nemotron-3-ultra-550b-a55b/i.test(m.id||m.name||""));
+  return nemotron?.id||null;
+}
+
+function markInstantRequestStart(){
+  return performance.now();
+}
+function recordInstantTiming(msg,start,responseAt=null){
+  msg.performance ||= {};
+  msg.performance.requestStartMs=start;
+  if(responseAt!=null)msg.performance.headersMs=Math.max(0,responseAt-start);
+}
+
 async function generateAssistant(chat, requestContext = null) {
   state.generating=true;
   const controller=beginGenerationController();
@@ -5654,8 +5678,13 @@ async function generateAssistant(chat, requestContext = null) {
     const toolPromise=needsPreRoute
       ? routeNativeToolsForTurn(userText,controller,{forceWeb})
       : Promise.resolve(noToolTurn());
-    // Persistent memory must never make ordinary chat feel hung.
-    const memoryPromise=promiseWithBudget(fetchRelevantMemories(userText,chat),450,[]);
+
+    // INSTANT PATH: current conversation is already authoritative context.
+    // Persistent memory is not fetched before a normal response.
+    // Only tool-heavy turns get a small concurrent memory budget.
+    const memoryPromise=needsPreRoute
+      ? promiseWithBudget(fetchRelevantMemories(userText,chat),180,[])
+      : Promise.resolve([]);
 
     const [toolOutcome,memoryOutcome]=await Promise.allSettled([toolPromise,memoryPromise]);
     showAutomaticWebActivity(false);
@@ -5717,12 +5746,14 @@ async function generateAssistant(chat, requestContext = null) {
 
     const activeAgent=activeAgentForChat(chat);
     const requested=activeAgent?.model||state.model;
-    const requestModel=bestModelForCapability("chat",requested);
+    const instantPreferred=!activeAgent ? preferredInstantChatModel() : null;
+    const requestModel=bestModelForCapability("chat",instantPreferred||requested);
     if(!requestModel)throw new Error("Nenhum modelo de chat está disponível no Avalynx Model Router.");
 
     const chatModels=modelsForCapability("chat");
     const candidates=[
       requestModel,
+      ...chatModels.filter(m=>/nemotron/i.test(m.id||m.name||"")).map(m=>m.id),
       ...chatModels.filter(isFreeModel).map(m=>m.id),
       ...chatModels.map(m=>m.id)
     ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,4);
@@ -5744,6 +5775,8 @@ async function generateAssistant(chat, requestContext = null) {
         ...(allowDiscovery?{tools:AVA_NATIVE_TOOL_SCHEMAS,tool_choice:"auto"}:{})
       };
 
+      const instantStart=markInstantRequestStart();
+      assistantMsg.performance={routeDoneMs:instantStart};
       const response=await fetch("/api/inference/chat",safeFetchOptions({
         method:"POST",
         headers:{"Content-Type":"application/json"},

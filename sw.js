@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v7-runtime-tool-router";
+const CACHE = "ava-i-shell-v7.0.1-instant-nemotron";
 const ASSETS = [
   "/",
   "/index.html",

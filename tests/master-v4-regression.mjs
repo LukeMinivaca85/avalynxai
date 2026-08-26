@@ -104,9 +104,17 @@ test("tool capability claims require real results",()=>{
   assert.match(appSource,/Never fabricate tool output/i);
 });
 
+
+test("instant path prefers NVIDIA Nemotron 3 Ultra",()=>{
+  assert.match(appSource,/nvidia\/nemotron-3-ultra-550b-a55b/);
+  assert.match(appSource,/preferredInstantChatModel/);
+  assert.match(appSource,/firstTokenMs/);
+});
+
 test("performance fast path exists",()=>{
   assert.match(appSource,/Promise\.allSettled/);
-  assert.match(appSource,/promiseWithBudget\(fetchRelevantMemories\(userText,chat\),450/);
+  assert.match(appSource,/Persistent memory is not fetched before a normal response/);
+  assert.match(appSource,/fetchRelevantMemories\(userText,chat\),180/);
   assert.match(appSource,/max_tokens:16384/);
 });
 

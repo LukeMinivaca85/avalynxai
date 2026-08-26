@@ -336,3 +336,15 @@ Cases cover identity, false premises, runtime date/time, calculator, current web
 
 
 CI: `.github/workflows/avalynx-regression.yml` runs `npm run ci` on every push and pull request so deterministic MASTER v4 regressions block obvious runtime/tool regressions before deployment.
+
+
+## v7.0.1 — Instant Path + NVIDIA Nemotron
+
+- Ordinary chat prefers `nvidia/nemotron-3-ultra-550b-a55b` when that model is present in the live Avalynx model catalog.
+- No foreground `/api/tools` request for ordinary chat.
+- No persistent-memory retrieval before ordinary chat.
+- Tool-heavy turns keep only a 180 ms foreground memory budget.
+- MCP discovery remains opt-in by integration intent.
+- Streaming starts directly from the selected model.
+- Per-message timing records response-header latency and first-token latency (`firstTokenMs`) so TTFT can be measured instead of guessed.
+- If Nemotron 3 Ultra is unavailable, the existing model-router fallback chain remains active.
