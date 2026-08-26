@@ -7,6 +7,7 @@ import { handleMcp } from "./server/modules/mcp-registry.mjs";
 import { handleArtifacts } from "./server/modules/artifact-sandbox.mjs";
 import { handleModelRouter } from "./server/modules/model-router.mjs";
 import { handleCodeEngine } from "./server/modules/code-engine.mjs";
+import { routeAndExecuteTools } from "./server/modules/runtime-tools.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const root = existsSync(join(projectRoot, "dist", "index.html"))
@@ -35,6 +36,21 @@ function sendJSON(res, status, data) {
 }
 
 async function handleAPI(req, res, url) {
+
+
+  if (url.pathname === "/api/tools") {
+    if (req.method !== "POST") { sendJSON(res, 405, {ok:false,error:"Method not allowed"}); return; }
+    const raw = await collectBody(req);
+    let body = {};
+    try { body = raw?.length ? JSON.parse(Buffer.from(raw).toString("utf8")) : {}; } catch {}
+    try {
+      const result = await routeAndExecuteTools(body);
+      sendJSON(res, 200, result);
+    } catch (error) {
+      sendJSON(res, 500, {ok:false,error:String(error?.message||error)});
+    }
+    return;
+  }
 
   if (url.pathname.startsWith("/api/code/")) {
     const raw = await collectBody(req);

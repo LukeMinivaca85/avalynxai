@@ -1,3 +1,4 @@
+import { injectRuntimeIntoMessages } from "./runtime-tools.mjs";
 const CACHE_TTL = 5 * 60 * 1000;
 let cache = { at: 0, models: [], providers: [] };
 
@@ -854,8 +855,14 @@ export async function handleModelRouter(req,res,url,body={}){
     const model=await resolveModel(body.model);
     if(!model)return json(res,404,{error:"Modelo não encontrado no Avalynx Model Router."});
     try{
-      const upstream=await chat(model,body);
+      // Runtime metadata is injected SERVER-SIDE on every model request.
+      // The client may suggest timezone/locale, but never supplies the date/time itself.
+      const injected=injectRuntimeIntoMessages(body,req.headers||{});
+      const upstream=await chat(model,injected.body);
       res.statusCode=upstream.status;
+      res.setHeader("x-avalynx-runtime-date",injected.runtime.current_date);
+      res.setHeader("x-avalynx-runtime-time",injected.runtime.current_time);
+      res.setHeader("x-avalynx-runtime-timezone",injected.runtime.timezone);
       upstream.headers.forEach((v,k)=>{if(["content-type","retry-after"].includes(k.toLowerCase()))res.setHeader(k,v)});
       if(upstream.body){ for await(const chunk of upstream.body)res.write(Buffer.from(chunk)); }
       return res.end();

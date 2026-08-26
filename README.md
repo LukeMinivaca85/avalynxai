@@ -258,3 +258,81 @@ The search backend uses DuckDuckGo HTML results with a Wikipedia fallback. This 
 - The system prompt explicitly forbids models from narrating internal tool calls.
 - Repeated `svg`, `svgsvg`, and `svgsvgsvg` artifacts are removed.
 - Developer settings show the runtime date/time so deployment behavior can be verified easily.
+
+
+## v7.0 — Runtime + Tool Router architecture
+
+This release moves the main reliability work out of MASTER v4 and into runtime infrastructure.
+
+### Request authority layers
+
+1. System / safety / MASTER v4
+2. Server-generated CURRENT_RUNTIME
+3. Current user request + current conversation
+4. Verified native tool results
+5. Persistent memory
+6. Base-model knowledge
+
+Web pages, search results, files, PDFs, email content, API output and MCP output are always treated as untrusted DATA for instruction-following purposes.
+
+### Server-generated runtime
+
+Every `/api/inference/chat` request is passed through `injectRuntimeIntoMessages`.
+The browser supplies only timezone/locale hints; the server calculates the actual date and time for that request.
+
+### Native Tool Router
+
+`POST /api/tools`
+
+The router detects:
+- current/dynamic information → web search
+- non-trivial arithmetic → calculator
+- file intent
+- image-generation intent
+- executable-code intent
+- otherwise → model
+
+Known tool intents are handled deterministically for speed. On ambiguous verification requests, tool-capable models may also request the real native `ava_web_search` or `ava_calculate` functions.
+
+### No-guess current-information invariant
+
+If a request requires fresh information and live search fails, the model is bypassed for that claim. Ava states that live search is unavailable rather than substituting model memory.
+
+### Verified calculator
+
+The calculator is a non-`eval` parser and includes exact BigInt modular exponentiation. Example regression: `17^13 mod 97 = 21`.
+
+### Sources
+
+Native web results preserve:
+- URL
+- title
+- domain
+- detected date when available
+- evidence/snippet
+- provider
+
+The UI renders source metadata from tool output rather than trusting the model to invent source URLs.
+
+### Context vs memory
+
+`toApiMessages(chat)` preserves the active conversation thread for references such as “ele/isso/nele”.
+Persistent memory retrieval is a separate lower-authority layer and has a latency budget so it cannot stall normal chat.
+
+### Performance
+
+- MCP enumeration is skipped on ordinary chat turns.
+- Tool routing and memory retrieval run concurrently when routing is needed.
+- Persistent-memory retrieval has a 450 ms foreground latency budget.
+- Normal requests stream immediately from the selected model.
+- Response budgets use 16k tokens with existing continuation support instead of defaulting every request to 65k.
+
+### Regression tests
+
+`npm test` runs deterministic MASTER v4 architecture regressions.
+`npm run test:live` runs the live model stress cases when `AVA_LIVE_STRESS_MODEL` and a running backend are available.
+
+Cases cover identity, false premises, runtime date/time, calculator, current web information, news, current CEOs, software versions, memory/follow-up references, prompt injection, system-prompt extraction, nonexistent tools/APIs, future Lukintosh claims, and correction of errors.
+
+
+CI: `.github/workflows/avalynx-regression.yml` runs `npm run ci` on every push and pull request so deterministic MASTER v4 regressions block obvious runtime/tool regressions before deployment.
