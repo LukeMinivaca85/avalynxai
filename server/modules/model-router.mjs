@@ -490,6 +490,31 @@ function openAiMessagesToGemini(messages=[]){
 }
 
 
+
+const NVIDIA_BREAKER_MS=Math.max(10_000,Number(process.env.NVIDIA_BREAKER_MS||180_000));
+let nvidiaBreakerUntil=0;
+let nvidiaBreakerReason="";
+
+function nvidiaBreakerOpen(){
+  return Date.now()<nvidiaBreakerUntil;
+}
+function tripNvidiaBreaker(reason="upstream unavailable"){
+  nvidiaBreakerUntil=Date.now()+NVIDIA_BREAKER_MS;
+  nvidiaBreakerReason=String(reason||"upstream unavailable").slice(0,300);
+}
+function clearNvidiaBreaker(){
+  nvidiaBreakerUntil=0;
+  nvidiaBreakerReason="";
+}
+function nvidiaBreakerStatus(){
+  return {
+    open:nvidiaBreakerOpen(),
+    until:nvidiaBreakerUntil||null,
+    retry_after_ms:Math.max(0,nvidiaBreakerUntil-Date.now()),
+    reason:nvidiaBreakerReason||null
+  };
+}
+
 function isNvidiaHostedFunctionMappingError(status,text=""){
   return Number(status)===404
     && /Function\s+'[0-9a-f-]{20,}'\s*:\s*Not found for account/i.test(String(text));
@@ -501,6 +526,30 @@ async function readResponseCloneText(response,max=5000){
 
 async function nvidiaChatWithRecovery(model,body,cfg){
   const canonicalModel=model.route?.model||model.id;
+  const breaker=nvidiaBreakerStatus();
+
+  if(breaker.open){
+    return new Response(JSON.stringify({
+      error:{
+        code:"NVIDIA_CIRCUIT_OPEN",
+        message:"NVIDIA está temporariamente fora do caminho crítico após uma falha recente. Use fallback imediatamente."
+      },
+      provider:"nvidia",
+      model:canonicalModel,
+      retryable:true,
+      retry_after_ms:breaker.retry_after_ms
+    }),{
+      status:503,
+      headers:{
+        "content-type":"application/json",
+        "x-avalynx-provider":"nvidia",
+        "x-avalynx-upstream-model":canonicalModel,
+        "x-avalynx-circuit":"open",
+        "retry-after":String(Math.max(1,Math.ceil(breaker.retry_after_ms/1000)))
+      }
+    });
+  }
+
   const base=(cfg.baseUrl||"https://integrate.api.nvidia.com/v1").replace(/\/$/,"");
   const chatPath=cfg.chatPath||"/chat/completions";
   const endpoint=`${base}${chatPath.startsWith("/")?chatPath:`/${chatPath}`}`;
@@ -510,58 +559,52 @@ async function nvidiaChatWithRecovery(model,body,cfg){
     authorization:`Bearer ${cfg.key}`
   };
 
-  const cleanPayload={
-    ...body,
-    model:canonicalModel
-  };
-
-  // Never forward Avalynx-only routing/runtime metadata upstream.
+  const cleanPayload={...body,model:canonicalModel};
   delete cleanPayload.runtime;
   delete cleanPayload.provider;
   delete cleanPayload.function_id;
   delete cleanPayload.functionId;
 
-  const doRequest=()=>fetch(endpoint,{
+  const response=await fetch(endpoint,{
     method:"POST",
     headers,
     body:JSON.stringify(cleanPayload)
   });
 
-  let response=await doRequest();
-  let diagnostic=await readResponseCloneText(response);
+  const diagnostic=await readResponseCloneText(response);
 
   if(isNvidiaHostedFunctionMappingError(response.status,diagnostic)){
-    // Hosted NIMs are backed by NVIDIA-side function mappings. If that mapping
-    // is stale for the current account, refresh catalog state and retry once.
-    try{await getCatalog(true)}catch{}
-    await new Promise(r=>setTimeout(r,180));
-    response=await doRequest();
-    diagnostic=await readResponseCloneText(response);
-
-    if(isNvidiaHostedFunctionMappingError(response.status,diagnostic)){
-      return new Response(JSON.stringify({
-        error:{
-          code:"NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE",
-          message:"O endpoint hospedado da NVIDIA está com o mapeamento interno deste modelo indisponível para esta conta. A Avalynx pode usar outro provider/modelo de fallback."
-        },
-        provider:"nvidia",
-        model:canonicalModel,
-        retryable:true
-      }),{
-        status:503,
-        headers:{
-          "content-type":"application/json",
-          "x-avalynx-provider":"nvidia",
-          "x-avalynx-upstream-model":canonicalModel,
-          "x-avalynx-retryable":"1"
-        }
-      });
-    }
+    // SPEED RULE: no refresh, no sleep, no retry in the same user turn.
+    tripNvidiaBreaker("NVIDIA hosted model mapping returned Function UUID 404");
+    return new Response(JSON.stringify({
+      error:{
+        code:"NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE",
+        message:"O endpoint hospedado da NVIDIA está temporariamente indisponível para esta conta. A Avalynx deve usar fallback imediatamente."
+      },
+      provider:"nvidia",
+      model:canonicalModel,
+      retryable:true,
+      retry_after_ms:NVIDIA_BREAKER_MS
+    }),{
+      status:503,
+      headers:{
+        "content-type":"application/json",
+        "x-avalynx-provider":"nvidia",
+        "x-avalynx-upstream-model":canonicalModel,
+        "x-avalynx-circuit":"tripped",
+        "retry-after":String(Math.ceil(NVIDIA_BREAKER_MS/1000))
+      }
+    });
   }
+
+  // Healthy NVIDIA response closes the breaker immediately.
+  if(response.ok)clearNvidiaBreaker();
 
   const outgoingHeaders=new Headers(response.headers);
   outgoingHeaders.set("x-avalynx-provider","nvidia");
   outgoingHeaders.set("x-avalynx-upstream-model",canonicalModel);
+  outgoingHeaders.set("x-avalynx-circuit","closed");
+
   return new Response(response.body,{
     status:response.status,
     statusText:response.statusText,
@@ -845,6 +888,10 @@ export async function handleModelRouter(req,res,url,body={}){
   if(url.pathname==="/api/providers"&&req.method==="GET"){
     const c=await getCatalog(false);
     return json(res,200,{data:c.providers});
+  }
+
+  if(url.pathname==="/api/inference/nvidia-circuit"&&req.method==="GET"){
+    return json(res,200,{provider:"nvidia",...nvidiaBreakerStatus(),breaker_ms:NVIDIA_BREAKER_MS});
   }
 
   if(url.pathname==="/api/inference/nvidia-test"&&req.method==="GET"){

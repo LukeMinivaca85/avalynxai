@@ -370,3 +370,25 @@ v7.0.2:
 - prioritizes known Hugging Face Qwen fallbacks when available;
 - strips Avalynx-only runtime/provider/function fields before NVIDIA requests;
 - adds DOM-level cleanup for leaked `svg`, `svgsvg`, and `svgsvgsvg` placeholder text.
+
+
+## v7.0.3 — NVIDIA Circuit Breaker Speed Fix
+
+This release removes the latency regression introduced by same-turn NVIDIA recovery.
+
+When NVIDIA returns its hosted-model internal Function UUID 404:
+- do NOT refresh `/models`;
+- do NOT sleep;
+- do NOT retry NVIDIA in the same user turn;
+- trip a server-side circuit breaker (default 180 seconds);
+- immediately continue to the existing Qwen/Hugging Face/model fallback chain.
+
+While the breaker is open, new requests skip the expensive NVIDIA upstream attempt and receive an immediate retryable 503 from the local router, causing the frontend to fall through to the next candidate.
+
+A healthy NVIDIA response closes the circuit again.
+
+Environment:
+`NVIDIA_BREAKER_MS=180000` (optional)
+
+Diagnostic:
+`GET /api/inference/nvidia-circuit`

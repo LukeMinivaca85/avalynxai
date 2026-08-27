@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v7.0.2-nvidia-direct-fix";
+const CACHE = "ava-i-shell-v7.0.3-nvidia-circuit-breaker";
 const ASSETS = [
   "/",
   "/index.html",

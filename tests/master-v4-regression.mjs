@@ -106,9 +106,12 @@ test("tool capability claims require real results",()=>{
 
 
 
-test("NVIDIA hosted Function UUID 404 is treated as retryable provider failure",()=>{
+test("NVIDIA hosted Function UUID 404 trips a zero-retry circuit breaker",()=>{
   assert.match(routerSource,/NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE/);
-  assert.match(routerSource,/isNvidiaHostedFunctionMappingError/);
+  assert.match(routerSource,/NVIDIA_CIRCUIT_OPEN/);
+  assert.match(routerSource,/tripNvidiaBreaker/);
+  assert.match(routerSource,/no refresh, no sleep, no retry in the same user turn/i);
+  assert.doesNotMatch(routerSource,/await new Promise\(r=>setTimeout\(r,180\)\)/);
   assert.match(appSource,/emergencyChatFallbackModels/);
 });
 

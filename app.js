@@ -5799,8 +5799,12 @@ async function generateAssistant(chat, requestContext = null) {
         const raw=await response.text();
         let detail=raw;
         try{const parsed=JSON.parse(raw);detail=parsed?.error?.message||parsed?.error||raw}catch{}
-        const mappingUnavailable=/NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE|mapeamento interno deste modelo indisponível/i.test(String(detail));
+        const mappingUnavailable=/NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE|NVIDIA_CIRCUIT_OPEN|mapeamento interno deste modelo indisponível|fallback imediatamente/i.test(String(detail));
         lastError=Object.assign(new Error(String(detail)),{status:response.status,model:candidateModel,mappingUnavailable});
+        if(mappingUnavailable){
+          assistantMsg.performance ||= {};
+          assistantMsg.performance.nvidiaCircuitFallback=true;
+        }
         if([401,402,403].includes(response.status))break;
         if(mappingUnavailable || [400,404,408,409,422,429,500,502,503,504].includes(response.status))continue;
         break;
@@ -6584,6 +6588,7 @@ function setupAvaSettingsCenter(){
   document.querySelector("#devConfigBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/config"));
   document.querySelector("#devModelsBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/models"));
   document.querySelector("#devNvidiaBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/inference/nvidia-test"));
+  document.querySelector("#devNvidiaCircuitBtn")?.addEventListener("click",()=>settingsFetchDebug("/api/inference/nvidia-circuit"));
   document.querySelector("#clearLocalPrefsBtn")?.addEventListener("click",()=>{
     localStorage.removeItem(AVA_PREFS_KEY); loadAvaSettingsCenter(); showToolGuard("Preferências locais da Avalynx removidas.");
   });
