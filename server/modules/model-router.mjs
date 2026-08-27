@@ -489,6 +489,86 @@ function openAiMessagesToGemini(messages=[]){
   return {system_instruction:system.length?{parts:[{text:system.join("\n\n")}]}:undefined,contents};
 }
 
+
+function isNvidiaHostedFunctionMappingError(status,text=""){
+  return Number(status)===404
+    && /Function\s+'[0-9a-f-]{20,}'\s*:\s*Not found for account/i.test(String(text));
+}
+
+async function readResponseCloneText(response,max=5000){
+  try{return (await response.clone().text()).slice(0,max)}catch{return ""}
+}
+
+async function nvidiaChatWithRecovery(model,body,cfg){
+  const canonicalModel=model.route?.model||model.id;
+  const base=(cfg.baseUrl||"https://integrate.api.nvidia.com/v1").replace(/\/$/,"");
+  const chatPath=cfg.chatPath||"/chat/completions";
+  const endpoint=`${base}${chatPath.startsWith("/")?chatPath:`/${chatPath}`}`;
+  const headers={
+    "content-type":"application/json",
+    "accept":"application/json",
+    authorization:`Bearer ${cfg.key}`
+  };
+
+  const cleanPayload={
+    ...body,
+    model:canonicalModel
+  };
+
+  // Never forward Avalynx-only routing/runtime metadata upstream.
+  delete cleanPayload.runtime;
+  delete cleanPayload.provider;
+  delete cleanPayload.function_id;
+  delete cleanPayload.functionId;
+
+  const doRequest=()=>fetch(endpoint,{
+    method:"POST",
+    headers,
+    body:JSON.stringify(cleanPayload)
+  });
+
+  let response=await doRequest();
+  let diagnostic=await readResponseCloneText(response);
+
+  if(isNvidiaHostedFunctionMappingError(response.status,diagnostic)){
+    // Hosted NIMs are backed by NVIDIA-side function mappings. If that mapping
+    // is stale for the current account, refresh catalog state and retry once.
+    try{await getCatalog(true)}catch{}
+    await new Promise(r=>setTimeout(r,180));
+    response=await doRequest();
+    diagnostic=await readResponseCloneText(response);
+
+    if(isNvidiaHostedFunctionMappingError(response.status,diagnostic)){
+      return new Response(JSON.stringify({
+        error:{
+          code:"NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE",
+          message:"O endpoint hospedado da NVIDIA está com o mapeamento interno deste modelo indisponível para esta conta. A Avalynx pode usar outro provider/modelo de fallback."
+        },
+        provider:"nvidia",
+        model:canonicalModel,
+        retryable:true
+      }),{
+        status:503,
+        headers:{
+          "content-type":"application/json",
+          "x-avalynx-provider":"nvidia",
+          "x-avalynx-upstream-model":canonicalModel,
+          "x-avalynx-retryable":"1"
+        }
+      });
+    }
+  }
+
+  const outgoingHeaders=new Headers(response.headers);
+  outgoingHeaders.set("x-avalynx-provider","nvidia");
+  outgoingHeaders.set("x-avalynx-upstream-model",canonicalModel);
+  return new Response(response.body,{
+    status:response.status,
+    statusText:response.statusText,
+    headers:outgoingHeaders
+  });
+}
+
 async function chat(model,body){
   const cfg=providerConfig(model.provider);
   if(!cfg)throw new Error(`Provider ${model.provider} não configurado.`);
@@ -498,30 +578,18 @@ async function chat(model,body){
       : model.id.split("/").slice(1).join("/")
   );
 
-  if(model.provider==="nvidia"||cfg.kind==="openai-chat"){
-    const base=(cfg.baseUrl||"https://integrate.api.nvidia.com/v1").replace(/\/$/,"");
+  if(model.provider==="nvidia"){
+    if(!cfg.key)throw new Error("NVIDIA_API_KEY não configurada.");
+    return nvidiaChatWithRecovery(model,body,cfg);
+  }
+
+  if(cfg.kind==="openai-chat"){
+    const base=(cfg.baseUrl||"").replace(/\/$/,"");
     const chatPath=cfg.chatPath||"/chat/completions";
     const endpoint=`${base}${chatPath.startsWith("/")?chatPath:`/${chatPath}`}`;
     const headers={"content-type":"application/json","accept":"application/json"};
     if(cfg.key)headers[cfg.authHeader||"authorization"]=(cfg.authPrefix??"Bearer ")+cfg.key;
-
-    const payload={...body,model:rawModel};
-    const r=await fetch(endpoint,{
-      method:"POST",
-      headers,
-      body:JSON.stringify(payload)
-    });
-
-    // Preserve upstream response but expose useful routing diagnostics.
-    const outgoingHeaders=new Headers(r.headers);
-    outgoingHeaders.set("x-avalynx-provider",model.provider);
-    outgoingHeaders.set("x-avalynx-upstream-model",rawModel);
-
-    return new Response(r.body,{
-      status:r.status,
-      statusText:r.statusText,
-      headers:outgoingHeaders
-    });
+    return fetch(endpoint,{method:"POST",headers,body:JSON.stringify({...body,model:rawModel})});
   }
 
   if(model.provider==="google"){

@@ -105,6 +105,18 @@ test("tool capability claims require real results",()=>{
 });
 
 
+
+test("NVIDIA hosted Function UUID 404 is treated as retryable provider failure",()=>{
+  assert.match(routerSource,/NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE/);
+  assert.match(routerSource,/isNvidiaHostedFunctionMappingError/);
+  assert.match(appSource,/emergencyChatFallbackModels/);
+});
+
+test("renderer artifacts are cleaned at DOM level",()=>{
+  assert.match(appSource,/installRendererArtifactGuard/);
+  assert.match(appSource,/isLeakedSvgPlaceholderText/);
+});
+
 test("instant path prefers NVIDIA Nemotron 3 Ultra",()=>{
   assert.match(appSource,/nvidia\/nemotron-3-ultra-550b-a55b/);
   assert.match(appSource,/preferredInstantChatModel/);

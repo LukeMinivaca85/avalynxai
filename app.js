@@ -1571,6 +1571,7 @@ async function generateImageResponse(chat, promptText) {
     finalizeRichMessage(node);
     renderMessageExtras(node, assistantMsg);
     wireSafeLinks(node);
+    cleanLeakedRendererArtifacts(node);
     persist();
     renderChatList();
     autoRenameChat(chat).catch(console.warn);
@@ -5632,6 +5633,16 @@ function composeLayeredMessages(chat,requestContext,{toolTurn,memoryBlock}={}){
 
 const AVA_INSTANT_CHAT_MODEL="nvidia/nemotron-3-ultra-550b-a55b";
 
+
+function emergencyChatFallbackModels(){
+  const wanted=[
+    "huggingface/Qwen/Qwen3-Coder-480B-A35B-Instruct",
+    "huggingface/Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "huggingface/Qwen/Qwen3-32B"
+  ];
+  return wanted.filter(id=>state.modelCatalog.some(m=>m.id===id));
+}
+
 function preferredInstantChatModel(){
   const models=modelsForCapability("chat");
   const exact=models.find(m=>m.id===AVA_INSTANT_CHAT_MODEL);
@@ -5754,9 +5765,10 @@ async function generateAssistant(chat, requestContext = null) {
     const candidates=[
       requestModel,
       ...chatModels.filter(m=>/nemotron/i.test(m.id||m.name||"")).map(m=>m.id),
+      ...emergencyChatFallbackModels(),
       ...chatModels.filter(isFreeModel).map(m=>m.id),
       ...chatModels.map(m=>m.id)
-    ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,4);
+    ].filter((m,i,a)=>m&&a.indexOf(m)===i).slice(0,6);
 
     let selectedModel=requestModel;
     let lastError=null;
@@ -5787,9 +5799,10 @@ async function generateAssistant(chat, requestContext = null) {
         const raw=await response.text();
         let detail=raw;
         try{const parsed=JSON.parse(raw);detail=parsed?.error?.message||parsed?.error||raw}catch{}
-        lastError=Object.assign(new Error(String(detail)),{status:response.status,model:candidateModel});
+        const mappingUnavailable=/NVIDIA_HOSTED_MODEL_MAPPING_UNAVAILABLE|mapeamento interno deste modelo indisponível/i.test(String(detail));
+        lastError=Object.assign(new Error(String(detail)),{status:response.status,model:candidateModel,mappingUnavailable});
         if([401,402,403].includes(response.status))break;
-        if([400,404,408,409,422,429,500,502,503,504].includes(response.status))continue;
+        if(mappingUnavailable || [400,404,408,409,422,429,500,502,503,504].includes(response.status))continue;
         break;
       }
 
@@ -6650,6 +6663,44 @@ function setupAvaStudioDock(){
 }
 
 
+
+function isLeakedSvgPlaceholderText(value){
+  const t=String(value||"").replace(/[*_`#\s]/g,"").toLowerCase();
+  return t==="svg" || /^svgsvg(?:svg)*$/.test(t);
+}
+
+function cleanLeakedRendererArtifacts(root=document){
+  if(!root)return;
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+  const doomed=[];
+  while(walker.nextNode()){
+    const n=walker.currentNode;
+    if(isLeakedSvgPlaceholderText(n.nodeValue))doomed.push(n);
+  }
+  for(const n of doomed){
+    const parent=n.parentElement;
+    n.nodeValue="";
+    if(parent && !parent.textContent.trim() && !parent.querySelector("svg,img,video,audio,canvas"))parent.remove();
+  }
+}
+
+function installRendererArtifactGuard(){
+  const target=document.querySelector("#messages")||document.body;
+  cleanLeakedRendererArtifacts(target);
+  const observer=new MutationObserver(mutations=>{
+    for(const m of mutations){
+      for(const node of m.addedNodes){
+        if(node.nodeType===Node.TEXT_NODE){
+          if(isLeakedSvgPlaceholderText(node.nodeValue))node.nodeValue="";
+        }else if(node.nodeType===Node.ELEMENT_NODE){
+          cleanLeakedRendererArtifacts(node);
+        }
+      }
+    }
+  });
+  observer.observe(target,{subtree:true,childList:true,characterData:true});
+}
+
 function installAvalynxRuntimeGuard(){
   window.addEventListener("unhandledrejection",event=>{
     const reason=event?.reason;
@@ -6678,6 +6729,7 @@ async function bootstrapAva() {
   setupAvaStudioDock();
   setupMemoryUI();
   installAvalynxRuntimeGuard();
+  installRendererArtifactGuard();
   loadState();
 
   const routed = activateChatFromURL();

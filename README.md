@@ -348,3 +348,25 @@ CI: `.github/workflows/avalynx-regression.yml` runs `npm run ci` on every push a
 - Streaming starts directly from the selected model.
 - Per-message timing records response-header latency and first-token latency (`firstTokenMs`) so TTFT can be measured instead of guessed.
 - If Nemotron 3 Ultra is unavailable, the existing model-router fallback chain remains active.
+
+
+## v7.0.2 — NVIDIA Hosted Mapping Recovery
+
+The canonical hosted model remains:
+`nvidia/nemotron-3-ultra-550b-a55b`
+through:
+`https://integrate.api.nvidia.com/v1/chat/completions`
+
+Some NVIDIA hosted API failures expose an internal backend Function UUID:
+`Function '<uuid>': Not found for account '<account>'`.
+
+That UUID is NVIDIA-side infrastructure, not an Avalynx function ID.
+
+v7.0.2:
+- detects this specific hosted-NVIDIA 404;
+- refreshes the NVIDIA model catalog and retries once;
+- converts a repeated internal mapping failure into retryable HTTP 503;
+- allows the normal Avalynx fallback chain to continue instead of surfacing the raw Function UUID to the user;
+- prioritizes known Hugging Face Qwen fallbacks when available;
+- strips Avalynx-only runtime/provider/function fields before NVIDIA requests;
+- adds DOM-level cleanup for leaked `svg`, `svgsvg`, and `svgsvgsvg` placeholder text.
