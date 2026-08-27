@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.lukintosh.avalynx",
+        "sha256_cert_fingerprints": ["56:5E:CF:5E:10:03:60:74:A0:C8:3B:6E:99:73:F1:7B:B6:E1:6B:A6:67:0A:70:7E:D8:F6:4B:56:FA:9C:A1:2D"]
+      }
+    }]
