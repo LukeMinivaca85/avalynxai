@@ -7,6 +7,7 @@ import { handleMcp } from "./server/modules/mcp-registry.mjs";
 import { handleArtifacts } from "./server/modules/artifact-sandbox.mjs";
 import { handleModelRouter } from "./server/modules/model-router.mjs";
 import { handleCodeEngine } from "./server/modules/code-engine.mjs";
+import { handleAccountSync } from "./server/modules/account-sync.mjs";
 import { routeAndExecuteTools } from "./server/modules/runtime-tools.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
@@ -36,6 +37,12 @@ function sendJSON(res, status, data) {
 }
 
 async function handleAPI(req, res, url) {
+
+  if (url.pathname.startsWith("/api/auth/") || url.pathname === "/api/sync") {
+    const handled = await handleAccountSync(req,res,url);
+    if (handled !== false) return;
+  }
+
 
 
   if (url.pathname === "/api/tools") {

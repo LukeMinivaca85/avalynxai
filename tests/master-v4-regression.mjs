@@ -126,6 +126,26 @@ test("instant path prefers NVIDIA Nemotron 3 Ultra",()=>{
   assert.match(appSource,/firstTokenMs/);
 });
 
+
+test("send path is idempotent against rapid taps",()=>{
+  assert.match(appSource,/state\.sendLocked/);
+  assert.match(appSource,/lastSendFingerprint/);
+  assert.match(appSource,/now-state\.lastSendAt<1500/);
+});
+
+test("ordinary chat uses a hedged response path",()=>{
+  assert.match(appSource,/hedgedChatRequest/);
+  assert.match(appSource,/delayMs=650/);
+  assert.match(appSource,/hedgeFallback=emergencyChatFallbackModels/);
+});
+
+test("cloud sync is background-only and auth-gated",()=>{
+  assert.match(appSource,/scheduleCloudSync/);
+  assert.match(appSource,/if\(state\.generating\)\{scheduleCloudSync\(1000\);return\}/);
+  assert.match(appSource,/\/api\/auth\/me/);
+  assert.match(appSource,/\/api\/sync/);
+});
+
 test("performance fast path exists",()=>{
   assert.match(appSource,/Promise\.allSettled/);
   assert.match(appSource,/Persistent memory is not fetched before a normal response/);

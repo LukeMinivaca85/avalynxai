@@ -392,3 +392,49 @@ Environment:
 
 Diagnostic:
 `GET /api/inference/nvidia-circuit`
+
+
+## v7.1 — Speed + Account Sync
+
+### Fast response path
+
+For ordinary chat, Avalynx starts the preferred NVIDIA Nemotron request immediately. If the primary provider has not returned response headers within 650 ms, a non-NVIDIA fallback (preferably Qwen/Hugging Face when available) is started in parallel. The first successful response wins and the losing request is aborted.
+
+This is a latency target, not a guarantee: network RTT, provider queueing, live web search, file processing, and code/image/video tools can take longer than 1.23 seconds. The architecture avoids making simple chat wait on those systems.
+
+The model catalog is warmed during bootstrap. Persistent memory and cloud sync stay off the foreground path for ordinary chat.
+
+### Rapid-send idempotency
+
+A send lock is acquired synchronously before any `await`. Identical sends within 1.5 seconds are ignored, and a message already generating cannot be duplicated by repeated taps/clicks. The Stop button remains usable while generation is active.
+
+### Lukintosh Account login
+
+Avalynx now supports standard OpenID Connect authorization-code + PKCE login against:
+
+`https://myaccount.lukintosh.com`
+
+Required backend variables:
+
+- `LUKINTOSH_OIDC_ISSUER=https://myaccount.lukintosh.com`
+- `LUKINTOSH_OIDC_CLIENT_ID`
+- `LUKINTOSH_OIDC_CLIENT_SECRET` (only if the client is confidential)
+- `LUKINTOSH_OIDC_REDIRECT_URI=https://ai.lukintosh.com/api/auth/callback`
+- `LUKINTOSH_OIDC_SCOPE=openid profile email`
+- `LUKINTOSH_SESSION_SECRET` (long random server secret)
+- `LUKINTOSH_APP_ORIGIN=https://ai.lukintosh.com`
+
+The identity provider must expose a valid OIDC discovery document and `userinfo` endpoint with a stable `sub` claim. Avalynx does not fake authentication if that configuration is missing.
+
+Sessions are signed in an HttpOnly, SameSite=Lax cookie. Provider access tokens are not stored in the browser or synchronized.
+
+### Cross-device synchronization
+
+Run `supabase/avalynx_sync.sql`, then configure:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+After login, chats and Ava Agents are merged from the cloud. Local changes are pushed in the background after a debounce and never block model generation. Active devices poll for remote changes every six seconds, while tabs in the same browser use `BroadcastChannel` for faster refresh.
+
+API keys and local secret fields are intentionally excluded from the cloud snapshot.

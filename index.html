@@ -489,6 +489,7 @@
       <button class="ava-settings-nav-item" data-settings-page="media"><span>◈</span>Mídia</button>
       <button class="ava-settings-nav-item" data-settings-page="security"><span>♢</span>Segurança</button>
       <button class="ava-settings-nav-item" data-settings-page="trusted"><span>♡</span>Contato confiável</button>
+      <button class="ava-settings-nav-item" data-settings-page="account"><span>◎</span>Conta e sincronização</button>
       <button class="ava-settings-nav-item" data-settings-page="privacy"><span>◌</span>Dados e privacidade</button>
       <div class="ava-settings-nav-spacer"></div>
       <button class="ava-settings-nav-item" data-settings-page="developer"><span>⌘</span>Desenvolvedor</button>
@@ -609,7 +610,26 @@
       </div>
     </section>
 
-    <section class="ava-settings-page" data-settings-panel="privacy">
+    
+    <section class="ava-settings-page" data-settings-panel="account">
+      <header><h2>Conta e sincronização</h2><p>Use sua conta Lukintosh para manter os mesmos chats em seus dispositivos.</p></header>
+      <div class="ava-setting-group">
+        <div class="ava-setting-row">
+          <div><strong>myaccount.lukintosh.com</strong><small id="lukintoshAccountStatus">Verificando conta…</small></div>
+          <div class="ava-setting-actions">
+            <button type="button" id="lukintoshLoginBtn" class="ava-settings-action">Entrar</button>
+            <button type="button" id="lukintoshLogoutBtn" class="ava-settings-action subtle" hidden>Sair</button>
+          </div>
+        </div>
+        <div class="ava-setting-row">
+          <div><strong>Sincronização de conversas</strong><small>Chats e Ava Agents são sincronizados em segundo plano. Chaves de API não entram no sync.</small></div>
+          <button type="button" id="lukintoshSyncNowBtn" class="ava-settings-action" disabled>Sincronizar agora</button>
+        </div>
+      </div>
+      <div class="settings-tip">O login só fica ativo quando o backend OIDC de myaccount.lukintosh.com estiver configurado. A Avalynx não simula uma sessão.</div>
+    </section>
+
+<section class="ava-settings-page" data-settings-panel="privacy">
       <header><h2>Dados e privacidade</h2><p>Controle o que fica armazenado neste dispositivo.</p></header>
       <div class="ava-setting-group">
         <label class="ava-setting-row"><div><strong>Salvar histórico local</strong></div><input class="ava-switch" id="avaHistorySetting" type="checkbox" checked></label>

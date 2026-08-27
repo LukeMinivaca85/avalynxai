@@ -2699,3 +2699,7 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 .tool-chip.auto-active{outline:1px solid currentColor;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 10%,transparent)}
 .tool-chip.auto-active::after{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;animation:autoWebPulse 1s ease-in-out infinite}
 @keyframes autoWebPulse{50%{opacity:.25;transform:scale(.75)}}
+
+/* v7.1 speed + sync */
+.send-locked{opacity:.82}
+.source-chip small{display:block;margin-top:2px;opacity:.72;font-size:8px}
