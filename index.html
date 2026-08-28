@@ -481,6 +481,7 @@
       <button class="ava-settings-nav-item active" data-settings-page="general"><span>⚙</span>Geral</button>
       <button class="ava-settings-nav-item" data-settings-page="personalization"><span>◉</span>Personalização</button>
       <button class="ava-settings-nav-item" data-settings-page="memory"><span>✦</span>Memória</button>
+      <button class="ava-settings-nav-item" data-settings-page="import"><span>⇩</span>Importar conversas</button>
       <button class="ava-settings-nav-item" data-settings-page="models"><span>◇</span>Modelos e IA</button>
       <button class="ava-settings-nav-item" data-settings-page="voice"><span>♫</span>Voz</button>
       <button class="ava-settings-nav-item" data-settings-page="code"><span>‹/›</span>Ava Code</button>
@@ -524,6 +525,7 @@
 
     <section class="ava-settings-page" data-settings-panel="memory">
 <header><h2>Memória</h2><p>A Ava pode lembrar informações úteis entre conversas sem salvar tudo.</p></header>
+<div class="ava-memory-runtime-status" id="avaMemoryRuntimeStatus">Carregando memória persistente…</div>
 <div class="ava-setting-group">
 <label class="ava-setting-row"><div><strong>Memória entre conversas</strong><small>Recupera memórias relevantes antes de responder.</small></div><input class="ava-switch" id="avaCrossChatMemorySetting" type="checkbox" checked></label>
 <label class="ava-setting-row"><div><strong>Memória de projetos</strong><small>Associa informações a projetos em andamento.</small></div><input class="ava-switch" id="avaProjectMemorySetting" type="checkbox" checked></label>
@@ -533,6 +535,46 @@
 <div id="avaMemoryList" class="ava-memory-list"></div>
 <div class="ava-setting-group"><div class="ava-setting-row danger"><div><strong>Limpar todas as memórias</strong><small>Isso não apaga suas conversas.</small></div><button type="button" id="clearAllMemoriesBtn" class="ava-settings-action subtle">Limpar tudo</button></div></div>
 </section>
+
+<section class="ava-settings-page" data-settings-panel="import">
+  <header><h2>Importar conversas</h2><p>Traga seus chats de outras IAs para continuar na Avalynx.</p></header>
+
+  <div class="ava-setting-group">
+    <div class="ava-setting-row">
+      <div><strong>Arquivo de exportação</strong><small>ChatGPT, Claude, Gemini ou formato genérico.</small></div>
+      <button type="button" id="avaImportChooseBtn" class="ava-settings-action">Escolher arquivo</button>
+      <input id="avaImportFile" type="file" hidden accept=".json,.html,.htm,.txt,.md,.zip,application/json,text/html,text/plain,application/zip">
+    </div>
+    <div class="ava-setting-row">
+      <div><strong>Formato</strong><small>Autodetectar funciona para a maioria dos exports.</small></div>
+      <select id="avaImportFormat">
+        <option value="auto">Autodetectar</option>
+        <option value="chatgpt">ChatGPT</option>
+        <option value="claude">Claude</option>
+        <option value="gemini">Gemini</option>
+        <option value="generic">JSON/HTML/TXT genérico</option>
+      </select>
+    </div>
+    <label class="ava-setting-row">
+      <div><strong>Importar para memória</strong><small>Extrai preferências e fatos explícitos dos chats importados sem salvar tudo como memória.</small></div>
+      <input class="ava-switch" id="avaImportMemories" type="checkbox" checked>
+    </label>
+  </div>
+
+  <div class="ava-import-drop" id="avaImportDrop" tabindex="0">
+    <strong>Solte o arquivo aqui</strong>
+    <small>Ou use “Escolher arquivo”. Arquivos ficam no seu navegador durante a conversão; o sync envia apenas os chats convertidos.</small>
+  </div>
+
+  <div id="avaImportStatus" class="ava-import-status">Nenhum arquivo selecionado.</div>
+  <div id="avaImportPreview" class="ava-import-preview"></div>
+
+  <div class="ava-setting-actions ava-import-actions">
+    <button type="button" id="avaImportCancelBtn" class="ava-settings-action subtle" disabled>Cancelar</button>
+    <button type="button" id="avaImportConfirmBtn" class="ava-settings-action" disabled>Importar para Avalynx</button>
+  </div>
+</section>
+
 <section class="ava-settings-page" data-settings-panel="models">
       <header><h2>Modelos e IA</h2><p>Controle roteamento, providers e fallbacks.</p></header>
       <div class="ava-setting-group">

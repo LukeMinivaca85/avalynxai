@@ -663,7 +663,11 @@ async function setupAccountSync(){
     await pullCloudSync();await pushCloudSync();showToolGuard("Conversas sincronizadas.");
   });
   const user=await loadAccountState();
-  if(user)await pullCloudSync();
+  if(user){
+    await pullCloudSync();
+    avaMemoryCache=[];avaMemoryCacheLoaded=false;
+    preloadPersistentMemory({force:true}).catch(()=>{});
+  }
   state.syncReady=true;
   if(user)scheduleCloudSync(50);
 
@@ -5655,18 +5659,497 @@ async function maybeRunChatMcp(chat, requestContext, signal) {
 }
 
 const AVA_MEMORY_USER_ID_KEY="ava-memory-user-id";
-function avalynxMemoryUserId(){let id=localStorage.getItem(AVA_MEMORY_USER_ID_KEY);if(!id){id=crypto?.randomUUID?.()||`local-${Date.now()}-${Math.random().toString(36).slice(2)}`;localStorage.setItem(AVA_MEMORY_USER_ID_KEY,id)}return id}
-function memorySettingsEnabled(id,defaultValue=true){const el=document.querySelector(`#${id}`);return el?el.checked:defaultValue}
-function chatMemoryDisabled(chat){return Boolean(chat?.memoryDisabled)}
-function memoryHeaders(){return {"x-avalynx-user-id":avalynxMemoryUserId(),accept:"application/json"}}
-async function fetchRelevantMemories(query,chat){if(!memorySettingsEnabled("avaCrossChatMemorySetting",true)||chatMemoryDisabled(chat))return [];try{const p=new URLSearchParams({q:String(query||"").slice(0,1000),limit:"8"});const r=await fetch(`/api/memory?${p}`,{headers:memoryHeaders()});if(!r.ok)return [];const data=await r.json();return Array.isArray(data.data)?data.data:[]}catch{return []}}
-function memoryContextBlock(memories=[]){if(!memories.length)return "";return `RELEVANT MEMORY FROM PREVIOUS CONVERSATIONS:\n${memories.map((m,i)=>`${i+1}. [${m.scope}] ${m.content}`).join("\n")}\n\nUse these memories only when relevant. Do not mention memory retrieval unless asked. Current user messages override stored memory.`}
-function memoryCandidateFromMessage(text){const raw=String(text||"").trim();if(!raw||raw.length>1200)return null;const lower=raw.toLowerCase();if(/\b(password|senha|api key|token|secret|chave de api)\b/i.test(raw))return null;if(/\b(suicid|automutil|diagnóstico|doença|religião|orientação sexual|partido político|crime)\b/i.test(raw))return null;if(/\b(lembre|lembra que|guarde|memorize)\b/i.test(lower))return {scope:"user",content:raw,importance:9,tags:["explicit-memory"]};if(/\b(eu prefiro|prefiro que|gosto de|não gosto de|me chame de|quero que você)\b/i.test(lower))return {scope:"user",content:raw,importance:7,tags:["preference"]};if(/\b(meu projeto|estou trabalhando|estamos construindo|estou criando|a avalynx|ava code)\b/i.test(lower))return {scope:"project",content:raw,importance:6,tags:["project"]};if(/\b(essa semana|nos próximos dias|amanhã|temporariamente|por enquanto)\b/i.test(lower))return {scope:"temporary",content:raw,importance:4,tags:["temporary"]};return null}
-async function persistMemoryCandidate(candidate,chat){if(!candidate||chatMemoryDisabled(chat))return;if(candidate.scope==="project"&&!memorySettingsEnabled("avaProjectMemorySetting",true))return;if(candidate.scope==="temporary"&&!memorySettingsEnabled("avaTemporaryMemorySetting",true))return;try{await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"create",user_id:avalynxMemoryUserId(),scope:candidate.scope,content:candidate.content,importance:candidate.importance,tags:candidate.tags,project_id:chat?.projectId||null,source_chat_id:chat?.id||null})})}catch{}}
-async function rememberFromUserMessage(text,chat){const c=memoryCandidateFromMessage(text);if(c)await persistMemoryCandidate(c,chat)}
-async function renderMemorySettingsList(){const list=document.querySelector("#avaMemoryList");if(!list)return;list.innerHTML='<div class="ava-memory-loading">Carregando memórias…</div>';try{const r=await fetch("/api/memory?limit=40",{headers:memoryHeaders()});const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);const rows=Array.isArray(data.data)?data.data:[];if(!rows.length){list.innerHTML='<div class="ava-memory-empty">Nenhuma memória salva ainda.</div>';return}list.innerHTML=rows.map(m=>`<article class="ava-memory-item"><div><span class="ava-memory-scope">${escapeHtml(m.scope)}</span><strong>${escapeHtml(m.content)}</strong><small>${m.expires_at?`Expira ${new Date(m.expires_at).toLocaleDateString()}`:"Sem expiração"}</small></div><button type="button" data-delete-memory="${escapeHtml(m.id)}">Remover</button></article>`).join("");list.querySelectorAll("[data-delete-memory]").forEach(btn=>btn.onclick=async()=>{await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"delete",id:btn.dataset.deleteMemory,user_id:avalynxMemoryUserId()})});renderMemorySettingsList()})}catch(error){list.innerHTML=`<div class="ava-memory-empty">Memória indisponível: ${escapeHtml(String(error.message||error))}</div>`}}
-function setupMemoryUI(){document.querySelector("#refreshMemoriesBtn")?.addEventListener("click",renderMemorySettingsList);document.querySelector("#clearAllMemoriesBtn")?.addEventListener("click",async()=>{if(!confirm("Limpar todas as memórias da Avalynx neste perfil?"))return;await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"clear",user_id:avalynxMemoryUserId()})});renderMemorySettingsList()});document.querySelector("#dontRememberChatBtn")?.addEventListener("click",()=>{const chat=activeChat?.();if(!chat)return;chat.memoryDisabled=!chat.memoryDisabled;const btn=document.querySelector("#dontRememberChatBtn");btn.classList.toggle("off",chat.memoryDisabled);btn.setAttribute("aria-pressed",String(chat.memoryDisabled));btn.textContent=chat.memoryDisabled?"✦ Memória desligada":"✦ Memória";persist()})}
+let avaMemoryCache=[];
+let avaMemoryCacheLoaded=false;
+let avaMemoryRefreshPromise=null;
 
+function avalynxLocalMemoryUserId(){
+  let id=localStorage.getItem(AVA_MEMORY_USER_ID_KEY);
+  if(!id){
+    id=crypto?.randomUUID?.()||`local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(AVA_MEMORY_USER_ID_KEY,id);
+  }
+  return id;
+}
+function avalynxMemoryUserId(){
+  return state.authUser?.sub ? `lukintosh:${state.authUser.sub}` : avalynxLocalMemoryUserId();
+}
+function memorySettingsEnabled(id,defaultValue=true){
+  const el=document.querySelector(`#${id}`);
+  return el?el.checked:defaultValue;
+}
+function chatMemoryDisabled(chat){return Boolean(chat?.memoryDisabled)}
+function memoryHeaders(){
+  return {"x-avalynx-user-id":avalynxMemoryUserId(),accept:"application/json"};
+}
+function memoryTokens(text=""){
+  return [...new Set(String(text).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").split(/[^a-z0-9]+/).filter(x=>x.length>=3))];
+}
+function memoryScore(memory,query=""){
+  const q=memoryTokens(query),m=new Set(memoryTokens(`${memory.content||""} ${(memory.tags||[]).join(" ")}`));
+  let overlap=0;for(const token of q)if(m.has(token))overlap++;
+  return overlap*5+Number(memory.importance||0)+(memory.scope==="user"?1:0);
+}
+function relevantMemoriesFromCache(query,chat,limit=8){
+  if(!memorySettingsEnabled("avaCrossChatMemorySetting",true)||chatMemoryDisabled(chat))return [];
+  const now=Date.now();
+  return avaMemoryCache
+    .filter(m=>!m.expires_at||new Date(m.expires_at).getTime()>now)
+    .map(m=>({m,score:memoryScore(m,query)}))
+    .filter(x=>x.score>0)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,limit)
+    .map(x=>x.m);
+}
+function updateMemoryRuntimeStatus(){
+  const el=document.querySelector("#avaMemoryRuntimeStatus");
+  if(!el)return;
+  if(!avaMemoryCacheLoaded){
+    el.textContent="Memória persistente carregando em segundo plano…";
+    return;
+  }
+  const account=state.authUser ? "conta Lukintosh" : "perfil deste dispositivo";
+  el.textContent=`${avaMemoryCache.length} memória(s) disponíveis · ${account} · cache instantâneo entre chats`;
+}
+async function preloadPersistentMemory({force=false}={}){
+  if(avaMemoryRefreshPromise&&!force)return avaMemoryRefreshPromise;
+  avaMemoryRefreshPromise=(async()=>{
+    try{
+      const r=await fetch("/api/memory?limit=80",{headers:memoryHeaders(),cache:"no-store"});
+      const data=await r.json().catch(()=>({}));
+      if(r.ok&&Array.isArray(data.data)){
+        avaMemoryCache=data.data;
+        avaMemoryCacheLoaded=true;
+      }
+    }catch(error){
+      console.warn("Avalynx persistent memory preload failed",error);
+    }finally{
+      updateMemoryRuntimeStatus();
+      avaMemoryRefreshPromise=null;
+    }
+    return avaMemoryCache;
+  })();
+  return avaMemoryRefreshPromise;
+}
+async function fetchRelevantMemories(query,chat){
+  const cached=relevantMemoriesFromCache(query,chat);
+  if(cached.length||avaMemoryCacheLoaded){
+    preloadPersistentMemory().catch(()=>{});
+    return cached;
+  }
+  await preloadPersistentMemory();
+  return relevantMemoriesFromCache(query,chat);
+}
+function memoryContextBlock(memories=[]){
+  if(!memories.length)return "";
+  return `RELEVANT PERSISTENT MEMORY FROM OTHER CONVERSATIONS:
+${memories.map((m,i)=>`${i+1}. [${m.scope}] ${m.content}`).join("\n")}
+
+Persistent memory is lower authority than the current conversation and current user message. Use only when relevant. Never reveal that memory retrieval occurred unless asked.`;
+}
+function memoryCandidateFromMessage(text){
+  const raw=String(text||"").trim();
+  if(!raw||raw.length>1200)return null;
+  const lower=raw.toLowerCase();
+  if(/\b(password|senha|api key|token|secret|chave de api)\b/i.test(raw))return null;
+  if(/\b(suicid|automutil|diagnóstico|doença|religião|orientação sexual|partido político|crime)\b/i.test(raw))return null;
+  if(/\b(lembre|lembra que|guarde|memorize)\b/i.test(lower))return {scope:"user",content:raw,importance:9,tags:["explicit-memory"]};
+  if(/\b(eu prefiro|prefiro que|gosto de|não gosto de|me chame de|quero que você)\b/i.test(lower))return {scope:"user",content:raw,importance:7,tags:["preference"]};
+  if(/\b(meu projeto|estou trabalhando|estamos construindo|estou criando|a avalynx|ava code)\b/i.test(lower))return {scope:"project",content:raw,importance:6,tags:["project"]};
+  if(/\b(essa semana|nos próximos dias|amanhã|temporariamente|por enquanto)\b/i.test(lower))return {scope:"temporary",content:raw,importance:4,tags:["temporary"]};
+  return null;
+}
+function memoryAlreadyCached(candidate){
+  const normalized=String(candidate?.content||"").trim().toLowerCase().replace(/\s+/g," ");
+  return avaMemoryCache.some(m=>String(m.content||"").trim().toLowerCase().replace(/\s+/g," ")===normalized);
+}
+async function persistMemoryCandidate(candidate,chat){
+  if(!candidate||chatMemoryDisabled(chat)||memoryAlreadyCached(candidate))return;
+  if(candidate.scope==="project"&&!memorySettingsEnabled("avaProjectMemorySetting",true))return;
+  if(candidate.scope==="temporary"&&!memorySettingsEnabled("avaTemporaryMemorySetting",true))return;
+  try{
+    const r=await fetch("/api/memory",{
+      method:"POST",
+      headers:{...memoryHeaders(),"content-type":"application/json"},
+      body:JSON.stringify({
+        action:"create",user_id:avalynxMemoryUserId(),scope:candidate.scope,
+        content:candidate.content,importance:candidate.importance,tags:candidate.tags,
+        project_id:chat?.projectId||null,source_chat_id:chat?.id||null
+      })
+    });
+    const data=await r.json().catch(()=>({}));
+    if(r.ok&&data.data){
+      avaMemoryCache.unshift(data.data);
+      avaMemoryCacheLoaded=true;
+      updateMemoryRuntimeStatus();
+    }
+  }catch(error){console.warn("Memory write failed",error)}
+}
+async function rememberFromUserMessage(text,chat){
+  const c=memoryCandidateFromMessage(text);
+  if(c)await persistMemoryCandidate(c,chat);
+}
+async function renderMemorySettingsList(){
+  const list=document.querySelector("#avaMemoryList");
+  if(!list)return;
+  list.innerHTML='<div class="ava-memory-loading">Carregando memórias…</div>';
+  await preloadPersistentMemory({force:true});
+  const rows=avaMemoryCache.slice(0,80);
+  if(!rows.length){
+    list.innerHTML='<div class="ava-memory-empty">Nenhuma memória salva ainda.</div>';
+    return;
+  }
+  list.innerHTML=rows.map(m=>`<article class="ava-memory-item">
+    <div><span class="ava-memory-scope">${escapeHtml(m.scope)}</span><strong>${escapeHtml(m.content)}</strong>
+    <small>${m.expires_at?`Expira ${new Date(m.expires_at).toLocaleDateString()}`:"Sem expiração"}</small></div>
+    <button type="button" data-delete-memory="${escapeHtml(m.id)}">Remover</button></article>`).join("");
+  list.querySelectorAll("[data-delete-memory]").forEach(btn=>btn.onclick=async()=>{
+    await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"delete",id:btn.dataset.deleteMemory,user_id:avalynxMemoryUserId()})});
+    avaMemoryCache=avaMemoryCache.filter(m=>m.id!==btn.dataset.deleteMemory);
+    renderMemorySettingsList();
+  });
+}
+function setupMemoryUI(){
+  document.querySelector("#refreshMemoriesBtn")?.addEventListener("click",()=>renderMemorySettingsList());
+  document.querySelector("#clearAllMemoriesBtn")?.addEventListener("click",async()=>{
+    if(!confirm("Limpar todas as memórias da Avalynx neste perfil?"))return;
+    await fetch("/api/memory",{method:"POST",headers:{...memoryHeaders(),"content-type":"application/json"},body:JSON.stringify({action:"clear",user_id:avalynxMemoryUserId()})});
+    avaMemoryCache=[];avaMemoryCacheLoaded=true;updateMemoryRuntimeStatus();renderMemorySettingsList();
+  });
+  document.querySelector("#dontRememberChatBtn")?.addEventListener("click",()=>{
+    const chat=activeChat?.();if(!chat)return;
+    chat.memoryDisabled=!chat.memoryDisabled;
+    const btn=document.querySelector("#dontRememberChatBtn");
+    btn.classList.toggle("off",chat.memoryDisabled);
+    btn.setAttribute("aria-pressed",String(chat.memoryDisabled));
+    btn.textContent=chat.memoryDisabled?"✦ Memória desligada":"✦ Memória";
+    persist();
+  });
+  updateMemoryRuntimeStatus();
+}
+
+
+let avaPendingImport=null;
+
+function importHash(value=""){
+  let h=2166136261;
+  for(const ch of String(value)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}
+  return (h>>>0).toString(36);
+}
+function importedMessage(role,content,createdAt=Date.now()){
+  const clean=String(content??"").trim().slice(0,24000);
+  if(!clean)return null;
+  return {id:`impmsg-${importHash(`${role}:${createdAt}:${clean.slice(0,500)}`)}`,role,content:clean,createdAt:Number(createdAt)||Date.now(),imported:true};
+}
+function importedChat({provider="generic",sourceId="",title="Conversa importada",createdAt=Date.now(),messages=[]}={}){
+  const cleanMessages=messages.filter(Boolean).filter(m=>["user","assistant"].includes(m.role)).slice(0,300);
+  const key=`${provider}:${sourceId||title}:${createdAt}`;
+  return {
+    id:`import-${importHash(key)}`,
+    title:String(title||"Conversa importada").trim().slice(0,80)||"Conversa importada",
+    slug:"",
+    createdAt:Number(createdAt)||Date.now(),
+    updatedAt:Math.max(Number(createdAt)||0,...cleanMessages.map(m=>Number(m.createdAt)||0),Date.now()),
+    messages:cleanMessages,
+    autoRenamed:true,
+    autoRenameQuality:"imported",
+    agentId:null,
+    mode:"chat",
+    imported:true,
+    importProvider:provider,
+    importSourceId:String(sourceId||"")
+  };
+}
+function contentText(value){
+  if(typeof value==="string")return value;
+  if(Array.isArray(value))return value.map(contentText).filter(Boolean).join("\n");
+  if(value&&typeof value==="object"){
+    if(typeof value.text==="string")return value.text;
+    if(Array.isArray(value.parts))return value.parts.map(contentText).filter(Boolean).join("\n");
+    if(typeof value.content==="string")return value.content;
+  }
+  return "";
+}
+function parseChatGPTExport(data){
+  const rows=Array.isArray(data)?data:(Array.isArray(data?.conversations)?data.conversations:[]);
+  const chats=[];
+  for(const conv of rows){
+    if(!conv?.mapping||typeof conv.mapping!=="object")continue;
+    const msgs=[];
+    for(const node of Object.values(conv.mapping)){
+      const m=node?.message;if(!m)continue;
+      const role=m.author?.role;
+      if(!["user","assistant"].includes(role))continue;
+      const text=contentText(m.content);
+      const created=(Number(m.create_time)||Number(conv.create_time)||Date.now()/1000)*1000;
+      const out=importedMessage(role,text,created);
+      if(out)msgs.push(out);
+    }
+    msgs.sort((a,b)=>a.createdAt-b.createdAt);
+    const chat=importedChat({
+      provider:"chatgpt",sourceId:conv.id||conv.conversation_id||"",
+      title:conv.title||"ChatGPT importado",
+      createdAt:(Number(conv.create_time)||Date.now()/1000)*1000,
+      messages:msgs
+    });
+    if(chat.messages.length)chats.push(chat);
+  }
+  return chats;
+}
+function parseClaudeExport(data){
+  const rows=Array.isArray(data)?data:(Array.isArray(data?.conversations)?data.conversations:[]);
+  const chats=[];
+  for(const conv of rows){
+    const raw=conv?.chat_messages||conv?.messages;
+    if(!Array.isArray(raw))continue;
+    const msgs=raw.map(m=>{
+      const sender=String(m.sender||m.role||m.author||"").toLowerCase();
+      const role=/human|user/.test(sender)?"user":/assistant|claude/.test(sender)?"assistant":null;
+      if(!role)return null;
+      const text=contentText(m.text??m.content);
+      const ts=Date.parse(m.created_at||m.createdAt||"")||Date.now();
+      return importedMessage(role,text,ts);
+    }).filter(Boolean);
+    const chat=importedChat({
+      provider:"claude",sourceId:conv.uuid||conv.id||"",
+      title:conv.name||conv.title||"Claude importado",
+      createdAt:Date.parse(conv.created_at||conv.createdAt||"")||msgs[0]?.createdAt||Date.now(),
+      messages:msgs
+    });
+    if(chat.messages.length)chats.push(chat);
+  }
+  return chats;
+}
+function parseGeminiExport(data){
+  const rows=Array.isArray(data)?data:(Array.isArray(data?.conversations)?data.conversations:Array.isArray(data?.chats)?data.chats:[]);
+  const chats=[];
+  for(const conv of rows){
+    const raw=conv?.messages||conv?.turns||conv?.items;
+    if(!Array.isArray(raw))continue;
+    const msgs=raw.map(m=>{
+      const who=String(m.role||m.author||m.sender||m.type||"").toLowerCase();
+      const role=/user|human|prompt/.test(who)?"user":/model|assistant|gemini|response/.test(who)?"assistant":null;
+      if(!role)return null;
+      return importedMessage(role,contentText(m.content??m.text??m.parts),Date.parse(m.created_at||m.timestamp||"")||Date.now());
+    }).filter(Boolean);
+    const chat=importedChat({provider:"gemini",sourceId:conv.id||"",title:conv.title||conv.name||"Gemini importado",createdAt:msgs[0]?.createdAt||Date.now(),messages:msgs});
+    if(chat.messages.length)chats.push(chat);
+  }
+  return chats;
+}
+function parseGenericJson(data){
+  if(Array.isArray(data)){
+    // OpenAI-style [{role,content}] means one chat.
+    if(data.every(x=>x&&typeof x==="object"&&("role" in x||"content" in x))){
+      const msgs=data.map(m=>{
+        const role=String(m.role||m.author||"").toLowerCase();
+        return importedMessage(role==="assistant"?"assistant":"user",contentText(m.content??m.text),Date.parse(m.created_at||"")||Date.now());
+      });
+      return [importedChat({provider:"generic",title:"Conversa importada",messages:msgs})];
+    }
+    // Try Claude/Gemini-like collections.
+    return parseClaudeExport(data).length?parseClaudeExport(data):parseGeminiExport(data);
+  }
+  if(Array.isArray(data?.messages)){
+    return parseGenericJson(data.messages).map(c=>({...c,title:data.title||c.title,importSourceId:data.id||""}));
+  }
+  return [];
+}
+function htmlToImportedChat(text,fileName="Conversa importada"){
+  const doc=new DOMParser().parseFromString(String(text),"text/html");
+  doc.querySelectorAll("script,style,noscript,svg").forEach(x=>x.remove());
+  const blocks=[...doc.querySelectorAll('[data-message-author-role], .message, article')];
+  const messages=[];
+  for(const block of blocks){
+    const roleHint=String(block.getAttribute("data-message-author-role")||block.className||"").toLowerCase();
+    const role=/assistant|claude|gemini|bot/.test(roleHint)?"assistant":/user|human/.test(roleHint)?"user":null;
+    if(role)messages.push(importedMessage(role,block.textContent,Date.now()+messages.length));
+  }
+  if(!messages.length){
+    const plain=(doc.body?.innerText||doc.body?.textContent||"").trim();
+    if(plain)messages.push(importedMessage("user",plain,Date.now()));
+  }
+  return importedChat({provider:"generic",title:fileName.replace(/\.[^.]+$/,""),messages});
+}
+function textToImportedChat(text,fileName="Conversa importada"){
+  const lines=String(text).split(/\n/);
+  const messages=[];let role=null,buf=[];
+  const flush=()=>{if(role&&buf.join("\n").trim())messages.push(importedMessage(role,buf.join("\n"),Date.now()+messages.length));buf=[]};
+  for(const line of lines){
+    const m=line.match(/^\s*(?:user|you|você|usuario|usuário|human)\s*:\s*(.*)$/i);
+    const a=line.match(/^\s*(?:assistant|ava|chatgpt|claude|gemini|ai)\s*:\s*(.*)$/i);
+    if(m){flush();role="user";buf=[m[1]]}
+    else if(a){flush();role="assistant";buf=[a[1]]}
+    else buf.push(line);
+  }
+  flush();
+  if(!messages.length&&String(text).trim())messages.push(importedMessage("user",String(text).trim(),Date.now()));
+  return importedChat({provider:"generic",title:fileName.replace(/\.[^.]+$/,""),messages});
+}
+async function unzipImportEntries(file){
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  let eocd=-1;
+  for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--){
+    if(dv.getUint32(i,true)===0x06054b50){eocd=i;break}
+  }
+  if(eocd<0)throw new Error("ZIP inválido.");
+  const entries=dv.getUint16(eocd+10,true);
+  let offset=dv.getUint32(eocd+16,true);
+  const out=[];
+  for(let n=0;n<entries&&offset+46<=bytes.length;n++){
+    if(dv.getUint32(offset,true)!==0x02014b50)break;
+    const method=dv.getUint16(offset+10,true);
+    const compressedSize=dv.getUint32(offset+20,true);
+    const nameLen=dv.getUint16(offset+28,true),extraLen=dv.getUint16(offset+30,true),commentLen=dv.getUint16(offset+32,true);
+    const localOffset=dv.getUint32(offset+42,true);
+    const name=new TextDecoder().decode(bytes.slice(offset+46,offset+46+nameLen));
+    if(dv.getUint32(localOffset,true)!==0x04034b50)throw new Error("ZIP local header inválido.");
+    const localNameLen=dv.getUint16(localOffset+26,true),localExtraLen=dv.getUint16(localOffset+28,true);
+    const dataStart=localOffset+30+localNameLen+localExtraLen;
+    const compressed=bytes.slice(dataStart,dataStart+compressedSize);
+    let data;
+    if(method===0)data=compressed;
+    else if(method===8){
+      if(typeof DecompressionStream==="undefined")throw new Error("Este navegador não suporta descompactação ZIP.");
+      const stream=new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      data=new Uint8Array(await new Response(stream).arrayBuffer());
+    }else throw new Error(`Método ZIP ${method} não suportado.`);
+    out.push({name,data});
+    offset+=46+nameLen+extraLen+commentLen;
+  }
+  return out;
+}
+function detectImportFormat(data,fileName,requested="auto"){
+  if(requested!=="auto")return requested;
+  const lower=String(fileName||"").toLowerCase();
+  if(data&&Array.isArray(data)){
+    if(data.some(x=>x?.mapping))return "chatgpt";
+    if(data.some(x=>Array.isArray(x?.chat_messages)))return "claude";
+    if(data.some(x=>Array.isArray(x?.turns)))return "gemini";
+  }
+  if(data?.conversations?.some?.(x=>x?.mapping))return "chatgpt";
+  if(/claude/.test(lower))return "claude";
+  if(/gemini|bard/.test(lower))return "gemini";
+  return "generic";
+}
+function parseImportJson(data,fileName,requested){
+  const format=detectImportFormat(data,fileName,requested);
+  let chats=[];
+  if(format==="chatgpt")chats=parseChatGPTExport(data);
+  else if(format==="claude")chats=parseClaudeExport(data);
+  else if(format==="gemini")chats=parseGeminiExport(data);
+  else chats=parseGenericJson(data);
+  return {format,chats};
+}
+async function parseConversationImportFile(file,requested="auto"){
+  const lower=file.name.toLowerCase();
+  if(lower.endsWith(".zip")){
+    const entries=await unzipImportEntries(file);
+    const candidates=entries.filter(e=>/\.(json|html?|txt|md)$/i.test(e.name)).sort((a,b)=>{
+      const score=n=>/conversations\.json$/i.test(n)?0:/conversation/i.test(n)?1:2;
+      return score(a.name)-score(b.name);
+    });
+    if(!candidates.length)throw new Error("Não encontrei conversations.json, JSON, HTML ou TXT dentro do ZIP.");
+    const all=[];
+    let detected=requested;
+    for(const entry of candidates.slice(0,10)){
+      const virtual=new File([entry.data],entry.name);
+      const parsed=await parseConversationImportFile(virtual,requested);
+      if(parsed.chats.length){all.push(...parsed.chats);detected=parsed.format;if(/conversations\.json$/i.test(entry.name))break}
+    }
+    return {format:detected,chats:all};
+  }
+  const text=await file.text();
+  if(/\.(html?|htm)$/i.test(lower))return {format:"generic",chats:[htmlToImportedChat(text,file.name)]};
+  if(/\.(txt|md)$/i.test(lower))return {format:"generic",chats:[textToImportedChat(text,file.name)]};
+  let data;
+  try{data=JSON.parse(text)}catch{throw new Error("O JSON não pôde ser lido.")}
+  return parseImportJson(data,file.name,requested);
+}
+function dedupeImportedChats(chats){
+  const existing=new Set(state.chats.map(c=>`${c.importProvider||""}:${c.importSourceId||""}:${c.id}`));
+  const ids=new Set(state.chats.map(c=>c.id));
+  return chats.filter(c=>{
+    const key=`${c.importProvider||""}:${c.importSourceId||""}:${c.id}`;
+    if(existing.has(key)||ids.has(c.id))return false;
+    existing.add(key);ids.add(c.id);return true;
+  });
+}
+async function createMemoriesFromImportedChats(chats){
+  if(!document.querySelector("#avaImportMemories")?.checked)return 0;
+  const candidates=[];
+  const seen=new Set();
+  for(const chat of chats){
+    for(const msg of chat.messages||[]){
+      if(msg.role!=="user")continue;
+      const c=memoryCandidateFromMessage(msg.content);
+      if(!c)continue;
+      const key=c.content.toLowerCase().replace(/\s+/g," ");
+      if(seen.has(key)||memoryAlreadyCached(c))continue;
+      seen.add(key);candidates.push({c,chat});
+      if(candidates.length>=40)break;
+    }
+    if(candidates.length>=40)break;
+  }
+  let saved=0;
+  for(const {c,chat} of candidates){
+    await persistMemoryCandidate(c,chat);saved++;
+  }
+  return saved;
+}
+function renderImportPreview(parsed,file){
+  const status=document.querySelector("#avaImportStatus"),preview=document.querySelector("#avaImportPreview");
+  const chats=parsed.chats||[];
+  if(status)status.textContent=`${file.name} · formato ${parsed.format} · ${chats.length} conversa(s) encontrada(s)`;
+  if(preview)preview.innerHTML=chats.slice(0,8).map(c=>`<div class="ava-import-preview-item"><strong>${escapeHtml(c.title)}</strong><small>${c.messages.length} mensagens · ${escapeHtml(c.importProvider||parsed.format)}</small></div>`).join("")+
+    (chats.length>8?`<div class="ava-import-preview-item"><small>+ ${chats.length-8} outras conversas</small></div>`:"");
+  const confirm=document.querySelector("#avaImportConfirmBtn");
+  if(confirm)confirm.disabled=!chats.length;
+}
+async function prepareConversationImport(file){
+  const status=document.querySelector("#avaImportStatus");
+  if(status)status.textContent=`Lendo ${file.name}…`;
+  const format=document.querySelector("#avaImportFormat")?.value||"auto";
+  const parsed=await parseConversationImportFile(file,format);
+  parsed.chats=dedupeImportedChats(parsed.chats).slice(0,300);
+  avaPendingImport={file,parsed};
+  renderImportPreview(parsed,file);
+  document.querySelector("#avaImportCancelBtn").disabled=false;
+}
+async function commitConversationImport(){
+  if(!avaPendingImport)return;
+  const {parsed}=avaPendingImport;
+  const chats=parsed.chats||[];
+  if(!chats.length)return;
+  for(const chat of chats){
+    chat.slug="";
+    ensureChatSlug(chat);
+  }
+  state.chats=[...chats,...state.chats];
+  state.activeId=chats[0]?.id||state.activeId;
+  persist();
+  renderAll();
+  const status=document.querySelector("#avaImportStatus");
+  if(status)status.textContent=`${chats.length} conversa(s) importada(s). Criando memórias úteis em segundo plano…`;
+  scheduleCloudSync(50);
+  const saved=await createMemoriesFromImportedChats(chats);
+  if(status)status.textContent=`Pronto: ${chats.length} conversa(s) importada(s) e ${saved} memória(s) útil(eis) adicionada(s).`;
+  avaPendingImport=null;
+  document.querySelector("#avaImportConfirmBtn").disabled=true;
+  document.querySelector("#avaImportCancelBtn").disabled=true;
+}
+function setupConversationImporter(){
+  const input=document.querySelector("#avaImportFile"),choose=document.querySelector("#avaImportChooseBtn"),drop=document.querySelector("#avaImportDrop");
+  choose?.addEventListener("click",()=>input?.click());
+  drop?.addEventListener("click",()=>input?.click());
+  input?.addEventListener("change",()=>{const f=input.files?.[0];if(f)prepareConversationImport(f).catch(e=>{document.querySelector("#avaImportStatus").textContent=`Não consegui importar: ${e.message}`})});
+  for(const event of ["dragenter","dragover"])drop?.addEventListener(event,e=>{e.preventDefault();drop.classList.add("dragover")});
+  for(const event of ["dragleave","drop"])drop?.addEventListener(event,e=>{e.preventDefault();drop.classList.remove("dragover")});
+  drop?.addEventListener("drop",e=>{const f=e.dataTransfer?.files?.[0];if(f)prepareConversationImport(f).catch(err=>{document.querySelector("#avaImportStatus").textContent=`Não consegui importar: ${err.message}`})});
+  document.querySelector("#avaImportCancelBtn")?.addEventListener("click",()=>{avaPendingImport=null;if(input)input.value="";document.querySelector("#avaImportStatus").textContent="Importação cancelada.";document.querySelector("#avaImportPreview").innerHTML="";document.querySelector("#avaImportConfirmBtn").disabled=true;document.querySelector("#avaImportCancelBtn").disabled=true});
+  document.querySelector("#avaImportConfirmBtn")?.addEventListener("click",()=>commitConversationImport().catch(e=>{document.querySelector("#avaImportStatus").textContent=`Falha ao salvar importação: ${e.message}`}));
+}
 
 function shouldAutoSearchWeb(text){
   const t=String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -5919,8 +6402,8 @@ async function generateAssistant(chat, requestContext = null) {
     // Persistent memory is not fetched before a normal response.
     // Only tool-heavy turns get a small concurrent memory budget.
     const memoryPromise=needsPreRoute
-      ? promiseWithBudget(fetchRelevantMemories(userText,chat),180,[])
-      : Promise.resolve([]);
+      ? promiseWithBudget(fetchRelevantMemories(userText,chat),180,relevantMemoriesFromCache(userText,chat))
+      : Promise.resolve(relevantMemoriesFromCache(userText,chat));
 
     const [toolOutcome,memoryOutcome]=await Promise.allSettled([toolPromise,memoryPromise]);
     showAutomaticWebActivity(false);
@@ -6985,6 +7468,8 @@ async function bootstrapAva() {
   setupAvaSettingsCenter();
   setupAvaStudioDock();
   setupMemoryUI();
+  setupConversationImporter();
+  preloadPersistentMemory().catch(()=>{});
   installAvalynxRuntimeGuard();
   installRendererArtifactGuard();
   loadState();

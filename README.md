@@ -438,3 +438,37 @@ Run `supabase/avalynx_sync.sql`, then configure:
 After login, chats and Ava Agents are merged from the cloud. Local changes are pushed in the background after a debounce and never block model generation. Active devices poll for remote changes every six seconds, while tabs in the same browser use `BroadcastChannel` for faster refresh.
 
 API keys and local secret fields are intentionally excluded from the cloud snapshot.
+
+
+## v7.2 — Conversation Import + Persistent Cross-Chat Memory
+
+### Conversation importer
+
+Settings → Importar conversas accepts:
+- ChatGPT `conversations.json`
+- ChatGPT export ZIPs containing `conversations.json`
+- Claude JSON exports
+- Gemini-style JSON exports
+- generic OpenAI-style JSON message arrays
+- HTML
+- TXT / Markdown
+- ZIP containers with supported JSON/HTML/TXT files
+
+Imports are converted into Avalynx's internal chat format and become normal continuable chats. Imported chats keep provider/source metadata and participate in the existing account sync.
+
+For browser stability, a single import currently commits at most 300 conversations and at most 300 user/assistant messages per conversation. Very large source messages are capped before entering local persistence.
+
+ZIP support uses browser-native `DecompressionStream("deflate-raw")`; browsers without that primitive can still import the extracted JSON/HTML/TXT file directly.
+
+### Persistent memory without slowing normal chat
+
+Persistent memory is preloaded from `/api/memory` in the background into `avaMemoryCache`.
+
+Normal conversation turns do not wait on Supabase. They select relevant memories synchronously from the already-loaded cache. Tool-heavy turns may refresh memory in parallel while preserving the foreground latency budget.
+
+When authenticated with a Lukintosh account, the memory namespace becomes:
+`lukintosh:<OIDC sub>`
+
+This allows the same persistent memory to be retrieved across devices after login, provided the same Supabase memory backend is configured.
+
+Imported chats can optionally contribute conservative memory candidates. The importer reuses the same secret/sensitive-data filters as normal chat and does not blindly convert the full transcript into memory.

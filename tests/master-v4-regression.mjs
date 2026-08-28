@@ -162,6 +162,27 @@ test("cloud sync is background-only and auth-gated",()=>{
   assert.match(appSource,/\/api\/sync/);
 });
 
+
+test("conversation importer supports major AI export families",()=>{
+  assert.match(appSource,/parseChatGPTExport/);
+  assert.match(appSource,/parseClaudeExport/);
+  assert.match(appSource,/parseGeminiExport/);
+  assert.match(appSource,/parseConversationImportFile/);
+  assert.match(appSource,/unzipImportEntries/);
+});
+
+test("persistent memory uses an instant cross-chat cache",()=>{
+  assert.match(appSource,/avaMemoryCache/);
+  assert.match(appSource,/relevantMemoriesFromCache/);
+  assert.match(appSource,/Promise\.resolve\(relevantMemoriesFromCache\(userText,chat\)\)/);
+  assert.match(appSource,/preloadPersistentMemory/);
+});
+
+test("logged-in memory namespace follows Lukintosh account",()=>{
+  assert.match(appSource,/lukintosh:\$\{state\.authUser\.sub\}/);
+  assert.match(appSource,/preloadPersistentMemory\(\{force:true\}\)/);
+});
+
 test("performance fast path exists",()=>{
   assert.match(appSource,/Promise\.allSettled/);
   assert.match(appSource,/Persistent memory is not fetched before a normal response/);

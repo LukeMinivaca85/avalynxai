@@ -2703,3 +2703,13 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 /* v7.1 speed + sync */
 .send-locked{opacity:.82}
 .source-chip small{display:block;margin-top:2px;opacity:.72;font-size:8px}
+
+/* v7.2 — conversation import + persistent memory cache */
+.ava-import-drop{display:grid;gap:4px;place-items:center;text-align:center;min-height:110px;border:1px dashed var(--border);border-radius:14px;background:var(--soft);padding:20px;cursor:pointer}
+.ava-import-drop.dragover{outline:2px solid currentColor;outline-offset:2px}
+.ava-import-drop strong{font-size:11px}.ava-import-drop small{font-size:8px;color:var(--muted);max-width:560px}
+.ava-import-status,.ava-memory-runtime-status{font-size:9px;color:var(--muted);padding:9px 11px;border-radius:10px;background:var(--soft);margin-bottom:10px}
+.ava-import-preview{display:grid;gap:7px;max-height:280px;overflow:auto;margin:10px 0}
+.ava-import-preview-item{display:grid;gap:3px;border:1px solid var(--border);border-radius:11px;padding:9px 10px;background:var(--soft)}
+.ava-import-preview-item strong{font-size:10px}.ava-import-preview-item small{font-size:8px;color:var(--muted)}
+.ava-import-actions{justify-content:flex-end;margin-top:12px}
