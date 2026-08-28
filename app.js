@@ -5773,10 +5773,11 @@ async function consumeAssistantResponse(res,assistantMsg,contentNode){
           const delta=choice.delta||{};
           if(delta.tool_calls)accumulateToolCallDeltas(toolCalls,delta.tool_calls);
           if(typeof delta.content==="string"){
-            if(delta.content && assistantMsg.performance && assistantMsg.performance.firstTokenMs==null){
+            const safeDelta=sanitizeModelTextChunk(delta.content);
+            if(safeDelta && assistantMsg.performance && assistantMsg.performance.firstTokenMs==null){
               assistantMsg.performance.firstTokenMs=Math.max(0,performance.now()-assistantMsg.performance.requestStartMs);
             }
-            assistantMsg.content+=delta.content;
+            assistantMsg.content+=safeDelta;
             contentNode.innerHTML=renderMarkdown(contentWithoutPendingWidgets(stripInternalToolLeak(assistantMsg.content)));
             finalizeRichMessage(contentNode.closest(".message")||contentNode.parentElement);
             scrollToBottom(false);
@@ -6915,8 +6916,14 @@ function setupAvaStudioDock(){
 
 
 function isLeakedSvgPlaceholderText(value){
-  const t=String(value||"").replace(/[*_`#\s]/g,"").toLowerCase();
-  return t==="svg" || /^svgsvg(?:svg)*$/.test(t);
+  const t=String(value||"").replace(/[*_`#\s:]/g,"").toLowerCase();
+  return /^(?:svg){1,12}$/.test(t);
+}
+function sanitizeModelTextChunk(value){
+  let text=String(value??"");
+  text=text.replace(/(?:^|\n)\s*(?:\*\*)?\s*(?:svg){1,12}\s*(?:\*\*)?\s*(?=\n|$)/gi,"");
+  text=text.replace(/^\s*(?:svg){2,12}\s*/i,"");
+  return text;
 }
 
 function cleanLeakedRendererArtifacts(root=document){

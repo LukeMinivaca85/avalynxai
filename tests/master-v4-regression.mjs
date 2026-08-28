@@ -30,6 +30,22 @@ test("calculator verifies modular arithmetic",()=>{
   assert.equal(r.exact,true);
 });
 
+test("behavior instructions mentioning web/current/news do not trigger web",()=>{
+  const p=analyzeToolIntent(`Fale comigo de forma natural.
+Não pesquise automaticamente na web.
+Use pesquisa quando eu perguntar por informações atuais, notícias, preços atuais, CEOs ou versões de software.
+Nunca afirme que pesquisou se uma ferramenta não tiver sido executada.
+Não exponha chamadas internas de ferramentas.
+O objetivo é parecer uma conversa contínua.`);
+  assert.equal(p.metaInstruction,true);assert.equal(p.web,false);assert.equal(p.currentInformationRequired,false);assert.equal(p.primary,"model");
+});
+test("actual current questions still trigger web after metalinguistic fix",()=>{
+  for(const q of ["Qual é o preço do dólar hoje?","Quem é o CEO atual da Microsoft?","Preço do dólar hoje","Pesquise as notícias de hoje","documentação atual da API"])assert.equal(analyzeToolIntent(q).web,true,q);
+});
+test("SVG protocol placeholders are sanitized before rendering",()=>{
+  assert.match(appSource,/sanitizeModelTextChunk/);assert.match(appSource,/assistantMsg\.content\+=safeDelta/);
+});
+
 test("tool router detects current-information requests",()=>{
   for(const q of [
     "Quem é o CEO atual da Microsoft?",

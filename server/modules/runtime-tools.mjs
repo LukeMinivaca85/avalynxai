@@ -106,44 +106,30 @@ export function normalizeIntentText(text=""){
   return String(text).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
 }
 
-export function analyzeToolIntent(text="",meta=runtimeMetadata()){
+function looksLikeBehaviorInstruction(text=""){
   const t=normalizeIntentText(text);
-  const reasons=[];
-  const explicitWeb=/\b(pesquis|busc|procure|na web|na internet|search|look up|find online|fonte|sources?)\b/i.test(t);
-  const freshness=/\b(hoje|agora|atual(?:mente)?|mais recente|ultimo|ultima|ultimos|ultimas|noticia|noticias|esta semana|este mes|este ano|today|now|current|latest|recent|news|this week|this month|this year)\b/i.test(t);
-  const dynamic=/\b(preco|cotacao|cambio|dolar|euro|usd|brl|ceo|presidente atual|versao atual|documentacao atual|docs atual|disponibilidade|disponivel agora|estoque|lancamento|evento recente|placar|resultado de hoje|clima|tempo agora|outage|status page|mercado|bolsa|bitcoin|eleicao)\b/i.test(t);
-  const math=/(\d[\d\s.,]*\s*(?:\^|\*\*|[+\-*/%])\s*\d)|\b(?:mod|modulo|módulo|raiz|sqrt|log|sin|cos|tan|fatorial|factorial)\b/i.test(t);
-  const file=/\b(arquivo|anexo|pdf|documento|imagem anexada|foto anexada|file|attachment)\b/i.test(t);
-  const image=/\b(crie|gere|gerar|desenhe|faça|faca).{0,30}\b(imagem|foto|ilustracao|ilustração|image|picture)\b/i.test(t);
-  const code=/\b(execute|rodar|rode|compile|teste o codigo|testar o codigo|run code|execute code)\b/i.test(t);
-
-  if(explicitWeb)reasons.push("explicit-web");
-  if(freshness)reasons.push("freshness");
-  if(dynamic)reasons.push("dynamic-fact");
-  if(math)reasons.push("calculation");
-  if(file)reasons.push("file");
-  if(image)reasons.push("image");
-  if(code)reasons.push("code");
-
-  const currentInformationRequired=explicitWeb||freshness||dynamic;
-  let primary="model";
-  if(image)primary="image";
-  else if(file)primary="file";
-  else if(code)primary="code";
-  else if(currentInformationRequired)primary="web";
-  else if(math)primary="calculator";
-
-  return {
-    primary,
-    web:currentInformationRequired,
-    calculator:math,
-    file,
-    image,
-    code,
-    currentInformationRequired,
-    reasons,
-    runtime:meta
-  };
+  const patterns=[/\bfale comigo\b/i,/\bnao pesquise\b/i,/\buse pesquisa\b/i,/\bquando eu\b/i,/\bpor padrao\b/i,/\bnunca afirme\b/i,/\bnao exponha\b/i,/\bo objetivo e\b/i,/\bweb search e uso de ferramentas\b/i,/\bnao use pesquisa\b/i];
+  const hits=patterns.reduce((n,re)=>n+(re.test(t)?1:0),0);
+  return hits>=2||(t.length>700&&hits>=1);
+}
+function explicitCurrentQuestion(text=""){
+  const t=normalizeIntentText(text);
+  const current=/\b(hoje|agora|atual(?:mente)?|mais recente|ultimo|ultima|noticia|noticias|preco|cotacao|cambio|dolar|euro|usd|brl|ceo|versao atual|documentacao atual|docs atual|disponibilidade|estoque|lancamento|evento recente|placar|clima|tempo agora|outage|status page|mercado|bolsa|bitcoin|eleicao|today|now|current|latest|recent|news)\b/i.test(t);
+  if(!current)return false;
+  return /\?$/.test(t)||/^(?:qual|quais|quem|quanto|onde|quando|como|me diga|diga|mostre|verifique|confira|preco|cotacao|noticias?|versao|documentacao|docs|disponibilidade|estoque|lancamento|clima|status)\b/i.test(t);
+}
+export function analyzeToolIntent(text="",meta=runtimeMetadata()){
+  const t=normalizeIntentText(text),reasons=[],metaInstruction=looksLikeBehaviorInstruction(text);
+  const explicitWeb=!metaInstruction&&/\b(?:pesquise|pesquisar|busque|buscar|procure|procurar|verifique na (?:web|internet)|consulte (?:a )?(?:web|internet)|search (?:the )?web|look up|find online)\b/i.test(t);
+  const asksCurrent=!metaInstruction&&explicitCurrentQuestion(text);
+  const math=!metaInstruction&&/(\d[\d\s.,]*\s*(?:\^|\*\*|[+\-*/%])\s*\d)|\b(?:mod|modulo|raiz|sqrt|log|sin|cos|tan|fatorial|factorial)\b/i.test(t);
+  const file=!metaInstruction&&/\b(arquivo|anexo|pdf|documento|imagem anexada|foto anexada|file|attachment)\b/i.test(t);
+  const image=!metaInstruction&&/\b(crie|gere|gerar|desenhe|faca).{0,30}\b(imagem|foto|ilustracao|image|picture)\b/i.test(t);
+  const code=!metaInstruction&&/\b(execute|rodar|rode|compile|teste o codigo|testar o codigo|run code|execute code)\b/i.test(t);
+  if(metaInstruction)reasons.push("behavior-instruction");if(explicitWeb)reasons.push("explicit-web");if(asksCurrent)reasons.push("current-fact");if(math)reasons.push("calculation");if(file)reasons.push("file");if(image)reasons.push("image");if(code)reasons.push("code");
+  const currentInformationRequired=!metaInstruction&&(explicitWeb||asksCurrent);
+  let primary="model";if(image)primary="image";else if(file)primary="file";else if(code)primary="code";else if(currentInformationRequired)primary="web";else if(math)primary="calculator";
+  return {primary,web:currentInformationRequired,calculator:math,file,image,code,currentInformationRequired,metaInstruction,reasons,runtime:meta};
 }
 
 function tokenizeExpr(expr){
