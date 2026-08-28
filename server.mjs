@@ -9,6 +9,7 @@ import { handleModelRouter } from "./server/modules/model-router.mjs";
 import { handleCodeEngine } from "./server/modules/code-engine.mjs";
 import { handleAccountSync } from "./server/modules/account-sync.mjs";
 import { routeAndExecuteTools } from "./server/modules/runtime-tools.mjs";
+import handleMemory from "./api/memory.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const root = existsSync(join(projectRoot, "dist", "index.html"))
@@ -44,6 +45,11 @@ async function handleAPI(req, res, url) {
   }
 
 
+
+  if (url.pathname === "/api/memory") {
+    await handleMemory(req, res);
+    return;
+  }
 
   if (url.pathname === "/api/tools") {
     if (req.method !== "POST") { sendJSON(res, 405, {ok:false,error:"Method not allowed"}); return; }

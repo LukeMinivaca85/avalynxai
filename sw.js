@@ -1,4 +1,4 @@
-const CACHE = "ava-i-shell-v7.2-import-memory";
+const CACHE = "ava-i-shell-v7.2.1";
 const ASSETS = [
   "/",
   "/index.html",

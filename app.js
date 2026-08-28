@@ -2320,40 +2320,36 @@ function beginInlineChatRename(chat,row){
   input.onblur=()=>finish(true);
 }
 
-function renderChatList() {
-  els.chatList.innerHTML = "";
-  state.chats.forEach(chat => {
-    const row = document.createElement("div");
-    row.className = "chat-item" + (chat.id === state.activeId ? " active" : "");
-    const chatAgent = agentById(chat.agentId);
-    row.innerHTML = `<button class="chat-item-title" style="border:0;background:transparent;text-align:left;padding:0;color:inherit">
-        ${chatAgent ? `<span class="chat-agent-symbol">${escapeHtml(chatAgent.symbol || "A")}</span>` : ""}
-        <span>${escapeHtml(chat.title)}</span>
-      </button>
-      <button class="chat-rename" aria-label="Renomear conversa" title="Renomear">•••</button>
-      <button class="chat-delete" aria-label="Excluir conversa">×</button>`;
-    row.querySelector(".chat-item-title").onclick = () => {
-      state.activeId = chat.id;
-      persist();
-      renderAll();
-      closeSidebar();
-    };
-    row.querySelector(".chat-rename").onclick = (e) => { e.stopPropagation(); beginInlineChatRename(chat,row); };
-    row.querySelector(".chat-item-title").ondblclick = (e) => { e.preventDefault(); e.stopPropagation(); beginInlineChatRename(chat,row); };
-    row.querySelector(".chat-delete").onclick = (e) => {
-      e.stopPropagation();
-      state.chats = state.chats.filter(c => c.id !== chat.id);
-      if (state.activeId === chat.id) state.activeId = state.chats[0]?.id || null;
-      persist();
-      renderAll();
-      const current = activeChat();
-      if (current) syncChatURL(current, { replace: true });
-      else if (location.pathname !== "/") history.replaceState({}, "", "/");
-    };
-    els.chatList.appendChild(row);
-  });
+function chatProviderLabel(provider=""){
+  const p=String(provider||"").toLowerCase();
+  if(p==="chatgpt")return "ChatGPT";if(p==="claude")return "Claude";if(p==="gemini")return "Gemini";return "Outras IAs";
 }
-
+function appendChatSidebarRow(chat,parent){
+  const row=document.createElement("div");row.className="chat-item"+(chat.id===state.activeId?" active":"")+(chat.imported?" imported-chat":"");
+  const chatAgent=agentById(chat.agentId);
+  row.innerHTML=`<button class="chat-item-title" style="border:0;background:transparent;text-align:left;padding:0;color:inherit">${chatAgent?`<span class="chat-agent-symbol">${escapeHtml(chatAgent.symbol||"A")}</span>`:""}<span>${escapeHtml(chat.title)}</span></button><button class="chat-rename" aria-label="Renomear conversa" title="Renomear">•••</button><button class="chat-delete" aria-label="Excluir conversa">×</button>`;
+  row.querySelector(".chat-item-title").onclick=()=>{state.activeId=chat.id;persist();renderAll();closeSidebar()};
+  row.querySelector(".chat-rename").onclick=e=>{e.stopPropagation();beginInlineChatRename(chat,row)};
+  row.querySelector(".chat-item-title").ondblclick=e=>{e.preventDefault();e.stopPropagation();beginInlineChatRename(chat,row)};
+  row.querySelector(".chat-delete").onclick=e=>{e.stopPropagation();state.chats=state.chats.filter(c=>c.id!==chat.id);if(state.activeId===chat.id)state.activeId=state.chats[0]?.id||null;persist();renderAll();const current=activeChat();if(current)syncChatURL(current,{replace:true});else if(location.pathname!=="/")history.replaceState({},"","/")};
+  parent.appendChild(row);
+}
+function appendChatSidebarSection(title,chats,provider=""){
+  if(!chats.length)return;const section=document.createElement("section");section.className="chat-sidebar-section";
+  const h=document.createElement("div");h.className="chat-sidebar-section-title";h.innerHTML=`<span>${escapeHtml(title)}</span>${provider?`<small>${chats.length}</small>`:""}`;section.appendChild(h);
+  chats.forEach(c=>appendChatSidebarRow(c,section));els.chatList.appendChild(section);
+}
+function renderChatList(){
+  els.chatList.innerHTML="";
+  appendChatSidebarSection("Avalynx",state.chats.filter(c=>!c.imported&&!c.importProvider));
+  const imported=state.chats.filter(c=>c.imported||c.importProvider);
+  if(imported.length){
+    const h=document.createElement("div");h.className="chat-sidebar-major-title";h.textContent="IMPORTADOS";els.chatList.appendChild(h);
+    const groups={chatgpt:[],claude:[],gemini:[],generic:[]};
+    imported.forEach(c=>{const p=String(c.importProvider||"").toLowerCase();(groups[p]||groups.generic).push(c)});
+    ["chatgpt","claude","gemini","generic"].forEach(p=>appendChatSidebarSection(chatProviderLabel(p),groups[p],p));
+  }
+}
 function renderMessages() {
   const chat = activeChat();
   const msgs = chat?.messages || [];

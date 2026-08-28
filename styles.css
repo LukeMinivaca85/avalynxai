@@ -2713,3 +2713,5 @@ body:not(.ava-code-mode) #mcpToolBtn { display:none !important; }
 .ava-import-preview-item{display:grid;gap:3px;border:1px solid var(--border);border-radius:11px;padding:9px 10px;background:var(--soft)}
 .ava-import-preview-item strong{font-size:10px}.ava-import-preview-item small{font-size:8px;color:var(--muted)}
 .ava-import-actions{justify-content:flex-end;margin-top:12px}
+
+.chat-sidebar-section{display:grid;gap:2px;margin-bottom:10px}.chat-sidebar-section-title{display:flex;justify-content:space-between;padding:7px 9px 4px;font-size:9px;font-weight:650;color:var(--muted)}.chat-sidebar-section-title small{font-size:8px;opacity:.72}.chat-sidebar-major-title{padding:12px 9px 4px;font-size:8px;font-weight:750;letter-spacing:.12em;color:var(--muted);opacity:.8}.imported-chat{margin-left:5px}
