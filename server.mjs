@@ -10,6 +10,7 @@ import { handleCodeEngine } from "./server/modules/code-engine.mjs";
 import { handleAccountSync } from "./server/modules/account-sync.mjs";
 import { routeAndExecuteTools } from "./server/modules/runtime-tools.mjs";
 import handleMemory from "./api/memory.mjs";
+import { handleIntegrationOAuth } from "./server/modules/integration-oauth.mjs";
 import { handleVoiceTts } from "./server/modules/voice-tts.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
@@ -146,7 +147,15 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
-    if (url.pathname === "/v1/chat/voice/tts") { await handleVoiceTts(req,res); return; }
+    if (url.pathname === "/v1/chat/voice/tts") {
+      await handleVoiceTts(req,res);
+      return;
+    }
+
+    if (url.pathname.startsWith("/v1/integrations/")) {
+      await handleIntegrationOAuth(req,res,url);
+      return;
+    }
 
     if (url.pathname.startsWith("/api/")) {
       await handleAPI(req, res, url);

@@ -8,6 +8,10 @@
       "destination": "/api/tts"
     },
     {
+      "source": "/v1/integrations/:path*",
+      "destination": "/api/integrations?path=:path*"
+    },
+    {
       "source": "/api/code/:path*",
       "destination": "/api/code?path=:path*"
     },

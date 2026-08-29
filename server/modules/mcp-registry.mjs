@@ -1,3 +1,4 @@
+import { getIntegrationAccessToken } from "./integration-oauth.mjs";
 import crypto from "node:crypto";
 
 const sessions = new Map();
@@ -28,20 +29,28 @@ function safeId(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
 }
 
-function loadRegistry() {
+async function loadRegistry(req) {
   const servers = [];
-  const DEFAULT_URLS = { gmail: "https://gmailmcp.googleapis.com/mcp/v1", zoom: "https://zoom.us/mcp/meeting/streamable", canva: "https://mcp.canva.com/mcp" };
 
   for (const [id, name, urlEnv, tokenEnv] of PRESETS) {
-    let url = process.env[urlEnv] || DEFAULT_URLS[id] || "";
+    let url = process.env[urlEnv] || "";
     let token = process.env[tokenEnv] || "";
+
+    const oauthProvider = ({"google-drive":"google","gmail":"google","google-calendar":"google"})[id] || (["microsoft","slack","zoom","spotify","canva","adobe"].includes(id) ? id : null);
+    if (!token && oauthProvider && req) {
+      try { token = await getIntegrationAccessToken(req, oauthProvider) || ""; } catch {}
+    }
+
+    if (id === "gmail") url = url || "https://gmailmcp.googleapis.com/mcp/v1";
+    if (id === "zoom") url = url || "https://zoom.us/mcp/meeting/streamable";
+    if (id === "canva") url = url || "https://mcp.canva.com/mcp";
 
     if (id === "lukintosh") {
       url = url || "https://mcp.lukintosh.com/mcp";
       token = token || process.env.AVA_MCP_GATEWAY_TOKEN || "";
     }
 
-    if (url && (id !== "lukintosh" || token) && (!["gmail","zoom","canva"].includes(id) || token)) {
+    if (url && (id !== "lukintosh" || token)) {
       servers.push({
         id,
         name,
@@ -234,7 +243,7 @@ function send(res, status, data) {
 }
 
 export async function handleMcp(req, res, url, body = {}) {
-  const registry = loadRegistry();
+  const registry = await loadRegistry(req);
   const path = url.pathname.replace(/^\/api\/mcp/, "") || "/servers";
 
   if (path === "/servers" && req.method === "GET") {
@@ -245,7 +254,7 @@ export async function handleMcp(req, res, url, body = {}) {
       configured: false,
       origin: id === "lukintosh" ? "https://mcp.lukintosh.com" : "",
       preset: true,
-      needsToken: ["lukintosh","gmail","zoom","canva"].includes(id)
+      needsToken: id === "lukintosh"
     }));
     for (const server of registry.filter(s => !s.preset)) all.push(publicServer(server));
     return send(res, 200, { servers: all });

@@ -86,7 +86,7 @@ function validReturnTo(value,req){
     return u.origin===allowedOrigin ? u.href : `${allowedOrigin}/`;
   }catch{return `${publicOrigin(req)}/`}
 }
-async function currentSession(req){
+export async function currentSession(req){
   const data=verifySession(cookie(req,"ava_session"));
   if(!data)return null;
   return {sub:String(data.sub),profile:{sub:data.sub,name:data.name||"",email:data.email||"",picture:data.picture||""},expiresAt:Number(data.exp)};
@@ -97,7 +97,7 @@ function syncConfig(){
     key:env("SUPABASE_SERVICE_ROLE_KEY")
   };
 }
-async function supa(path,options={}){
+export async function supa(path,options={}){
   const c=syncConfig();
   if(!c.url||!c.key)throw new Error("Supabase sync backend is not configured.");
   const r=await fetch(`${c.url}/rest/v1/${path}`,{
