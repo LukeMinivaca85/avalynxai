@@ -4,6 +4,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/v1/chat/voice/tts",
+      "destination": "/api/tts"
+    },
+    {
       "source": "/api/code/:path*",
       "destination": "/api/code?path=:path*"
     },

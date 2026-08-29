@@ -472,3 +472,7 @@ When authenticated with a Lukintosh account, the memory namespace becomes:
 This allows the same persistent memory to be retrieved across devices after login, provided the same Supabase memory backend is configured.
 
 Imported chats can optionally contribute conservative memory candidates. The importer reuses the same secret/sensitive-data filters as normal chat and does not blindly convert the full transcript into memory.
+
+
+## v7.3 Voice + MCP
+Veja `docs/MCP-TTS-SETUP.md`.

@@ -1,13 +1,13 @@
 {
   "name": "ava-i",
-  "version": "7.2.1",
+  "version": "7.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build-static.mjs",
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs && node --check server/modules/mcp-registry.mjs && node --check api/mcp.mjs && node --check server/modules/artifact-sandbox.mjs && node --check server/modules/model-router.mjs && node --check api/router.mjs && node --check server/modules/code-engine.mjs && node --check api/code.mjs && node --check server/modules/runtime-tools.mjs && node --check api/tools.mjs && node --check api/web-search.mjs && node --check tests/master-v4-regression.mjs && node --check server/modules/account-sync.mjs && node --check tests/account-sync-regression.mjs",
+    "check": "node --check app.js && node --check server.mjs && node --check api/proxy.mjs && node --check server/proxy-core.mjs && node --check scripts/build-static.mjs && node --check server/modules/mcp-registry.mjs && node --check api/mcp.mjs && node --check server/modules/artifact-sandbox.mjs && node --check server/modules/model-router.mjs && node --check api/router.mjs && node --check server/modules/code-engine.mjs && node --check api/code.mjs && node --check server/modules/runtime-tools.mjs && node --check api/tools.mjs && node --check api/web-search.mjs && node --check tests/master-v4-regression.mjs && node --check server/modules/account-sync.mjs && node --check tests/account-sync-regression.mjs && node --check server/modules/voice-tts.mjs && node --check api/tts.mjs",
     "render:build": "npm install && npm run ci",
     "test": "node tests/master-v4-regression.mjs && node tests/account-sync-regression.mjs",
     "test:live": "AVA_LIVE_STRESS=1 node tests/master-v4-regression.mjs",

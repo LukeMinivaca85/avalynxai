@@ -10,6 +10,7 @@ import { handleCodeEngine } from "./server/modules/code-engine.mjs";
 import { handleAccountSync } from "./server/modules/account-sync.mjs";
 import { routeAndExecuteTools } from "./server/modules/runtime-tools.mjs";
 import handleMemory from "./api/memory.mjs";
+import { handleVoiceTts } from "./server/modules/voice-tts.mjs";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const root = existsSync(join(projectRoot, "dist", "index.html"))
@@ -144,6 +145,8 @@ function serveStatic(req, res, url) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+    if (url.pathname === "/v1/chat/voice/tts") { await handleVoiceTts(req,res); return; }
 
     if (url.pathname.startsWith("/api/")) {
       await handleAPI(req, res, url);

@@ -4539,12 +4539,17 @@ const AVA_MCP_MARKETPLACE = [
   {id:"github",name:"GitHub",icon:"GH",category:"Developer",description:"Repos, issues, pull requests, arquivos e ações."},
   {id:"supabase",name:"Supabase",icon:"SB",category:"Developer",description:"Postgres, schema, auth e projetos."},
   {id:"cloudflare",name:"Cloudflare",icon:"CF",category:"Infrastructure",description:"Workers, DNS, logs e infraestrutura."},
-  {id:"google-drive",name:"Google Drive",icon:"GD",category:"Productivity",description:"Arquivos e documentos do Drive."},
-  {id:"gmail",name:"Gmail",icon:"GM",category:"Productivity",description:"E-mails, busca e fluxos de comunicação."},
+  {id:"google-drive",name:"Google Drive",icon:"GD",category:"Google",description:"Arquivos e documentos do Drive."},
+  {id:"gmail",name:"Gmail",icon:"GM",category:"Google",description:"E-mails, busca, rascunhos e marcadores."},
+  {id:"google-calendar",name:"Google Calendar",icon:"GC",category:"Google",description:"Agenda, eventos e calendários via Google Workspace MCP."},
+  {id:"microsoft",name:"Microsoft 365",icon:"MS",category:"Productivity",description:"Teams, Outlook, OneDrive e Microsoft Graph."},
   {id:"slack",name:"Slack",icon:"SL",category:"Communication",description:"Canais, mensagens, threads e colaboração."},
-  {id:"zoom",name:"Zoom",icon:"ZM",category:"Communication",description:"Reuniões, gravações e fluxos Zoom via MCP compatível."},
-  {id:"canva",name:"Canva",icon:"CA",category:"Creative",description:"Designs e fluxos criativos via MCP compatível."},
-  {id:"adobe",name:"Adobe",icon:"AD",category:"Creative",description:"Creative Cloud e documentos via MCP compatível."},
+  {id:"zoom",name:"Zoom",icon:"ZM",category:"Communication",description:"Reuniões, gravações e fluxos Zoom."},
+  {id:"spotify",name:"Spotify",icon:"SP",category:"Music",description:"Busca, biblioteca, playlists e playback quando autorizado."},
+  {id:"apple-music",name:"Apple Music",icon:"AM",category:"Music",description:"Catálogo, biblioteca e MusicKit."},
+  {id:"shazam",name:"Shazam",icon:"SH",category:"Music",description:"Reconhecimento musical via ShazamKit."},
+  {id:"canva",name:"Canva",icon:"CA",category:"Creative",description:"Designs, assets, exportação e colaboração."},
+  {id:"adobe",name:"Adobe",icon:"AD",category:"Creative",description:"APIs Adobe e fluxos Creative Cloud compatíveis."},
   {id:"vercel",name:"Vercel",icon:"▲",category:"Infrastructure",description:"Deploys e projetos Vercel."},
   {id:"render",name:"Render",icon:"R",category:"Infrastructure",description:"Serviços, deploys e logs Render."},
   {id:"stripe",name:"Stripe",icon:"S",category:"Business",description:"Produtos, preços, clientes e pagamentos."},
@@ -4621,12 +4626,18 @@ function setupStudioMarketplaceTabs() {
 }
 
 const MCP_BRANDS={
- github:["GitHub","https://github.githubassets.com/favicons/favicon.svg"],supabase:["Supabase","https://supabase.com/favicon/favicon-32x32.png"],cloudflare:["Cloudflare","https://www.cloudflare.com/favicon.ico"],"google-drive":["Google Drive","https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png"],vercel:["Vercel","https://vercel.com/favicon.ico"],render:["Render","https://render.com/favicon.ico"],stripe:["Stripe","https://stripe.com/favicon.ico"],sentry:["Sentry","https://sentry.io/favicon.ico"],gmail:["Gmail",""],slack:["Slack",""],zoom:["Zoom",""],canva:["Canva",""],adobe:["Adobe",""]};
+ github:["GitHub","https://github.githubassets.com/favicons/favicon.svg"],
+ supabase:["Supabase","https://supabase.com/favicon/favicon-32x32.png"],
+ cloudflare:["Cloudflare","https://www.cloudflare.com/favicon.ico"],
+ "google-drive":["Google Drive","https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png"],
+ gmail:["Gmail",""],"google-calendar":["Google Calendar",""],microsoft:["Microsoft",""],slack:["Slack",""],zoom:["Zoom",""],spotify:["Spotify",""],"apple-music":["Apple Music",""],shazam:["Shazam",""],canva:["Canva",""],adobe:["Adobe",""],
+ vercel:["Vercel","https://vercel.com/favicon.ico"],render:["Render","https://render.com/favicon.ico"],stripe:["Stripe","https://stripe.com/favicon.ico"],sentry:["Sentry","https://sentry.io/favicon.ico"]};
+const MCP_MENTION_ALIASES={google:"google-drive",drive:"google-drive",gmail:"gmail",calendar:"google-calendar",gcal:"google-calendar",microsoft:"microsoft",teams:"microsoft",outlook:"microsoft",onedrive:"microsoft",slack:"slack",zoom:"zoom",spotify:"spotify",applemusic:"apple-music","apple-music":"apple-music",shazam:"shazam",canva:"canva",adobe:"adobe",github:"github",supabase:"supabase",cloudflare:"cloudflare",vercel:"vercel",render:"render",stripe:"stripe",sentry:"sentry"};
 function brandIcon(id,fallback="MCP"){const b=MCP_BRANDS[id];return b?.[1]?`<img class="mcp-brand-logo" src="${b[1]}" alt="" referrerpolicy="no-referrer">`:`<span aria-hidden="true">${escapeHtml(fallback)}</span>`}
 const MCP_MENTIONS=Object.entries(MCP_BRANDS).map(([id,v])=>({id,label:v[0]}));
-function mentionedMcpProviders(text){return MCP_MENTIONS.filter(p=>new RegExp(`@${p.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?=\\s|$)`,"i").test(text)).map(p=>p.id)}
+function mentionedMcpProviders(text){const matches=[...String(text||"").matchAll(/(?:^|\s)@([a-z0-9_.-]+)/gi)];return [...new Set(matches.map(m=>{const raw=String(m[1]||"").toLowerCase();return MCP_MENTION_ALIASES[raw]||MCP_MENTIONS.find(p=>p.label.toLowerCase().replace(/\s+/g,"-")===raw)?.id||null}).filter(Boolean))]}
 function mentionMenu(){let x=document.querySelector("#mcpMentionMenu");if(!x){x=document.createElement("div");x.id="mcpMentionMenu";x.className="mcp-mention-menu hidden";document.querySelector(".composer")?.appendChild(x)}return x}
-function renderMcpMentionMenu(){const x=mentionMenu();if(state.appMode!=="code"){x.classList.add("hidden");return}const pos=els.prompt.selectionStart??els.prompt.value.length,b=els.prompt.value.slice(0,pos),m=b.match(/(?:^|\s)@([A-Za-z-]*)$/);if(!m){x.classList.add("hidden");return}const q=m[1].toLowerCase(),start=pos-m[1].length-1,items=MCP_MENTIONS.filter(p=>p.label.toLowerCase().includes(q)||p.id.includes(q));x.innerHTML=items.map(p=>`<button type="button" class="mcp-mention-option" data-id="${p.id}" data-label="${p.label}"><span>${brandIcon(p.id,p.label.slice(0,2))}</span>@${p.label}</button>`).join("");x.classList.toggle("hidden",!items.length);x.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{els.prompt.value=els.prompt.value.slice(0,start)+`@${btn.dataset.label} `+els.prompt.value.slice(pos);x.classList.add("hidden");els.prompt.focus();autoGrow()})}
+function renderMcpMentionMenu(){const x=mentionMenu();if(!["chat","code"].includes(state.appMode)){x.classList.add("hidden");return}const pos=els.prompt.selectionStart??els.prompt.value.length,b=els.prompt.value.slice(0,pos),m=b.match(/(?:^|\s)@([A-Za-z0-9_.-]*)$/);if(!m){x.classList.add("hidden");return}const q=m[1].toLowerCase(),start=pos-m[1].length-1;const preferred=[["google-drive","Google"],["gmail","Gmail"],["google-calendar","Google Calendar"],["microsoft","Microsoft"],["slack","Slack"],["zoom","Zoom"],["spotify","Spotify"],["apple-music","Apple Music"],["shazam","Shazam"],["canva","Canva"],["adobe","Adobe"]];const ids=new Set(preferred.map(x=>x[0]));const items=[...preferred.map(([id,label])=>({id,label})),...MCP_MENTIONS.filter(p=>!ids.has(p.id))].filter(p=>p.label.toLowerCase().includes(q)||p.id.includes(q));x.innerHTML=items.map(p=>`<button type="button" class="mcp-mention-option" data-id="${p.id}" data-label="${p.label}"><span>${brandIcon(p.id,p.label.slice(0,2))}</span>@${p.label}</button>`).join("");x.classList.toggle("hidden",!items.length);x.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{const mentionId=btn.dataset.id==="google-drive"?"google":btn.dataset.id==="google-calendar"?"calendar":btn.dataset.id==="apple-music"?"applemusic":btn.dataset.id;els.prompt.value=els.prompt.value.slice(0,start)+`@${mentionId} `+els.prompt.value.slice(pos);x.classList.add("hidden");els.prompt.focus();autoGrow()})}
 const AVA_LOCAL_ARTIFACT_TOOL={type:"function",function:{name:"ava__create_artifact",description:"Create a real downloadable text/code file when the user asks for a file.",parameters:{type:"object",additionalProperties:false,required:["name","content"],properties:{name:{type:"string"},content:{type:"string"}}}}};
 async function createSafeArtifact(tc,node){let a={};try{a=JSON.parse(tc.function.arguments||"{}")}catch{}const r=await fetch("/api/artifacts/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(a)}),d=await r.json();if(!r.ok)return{role:"tool",tool_call_id:tc.id,content:JSON.stringify({error:d.error})};const c=document.createElement("div");c.className="ava-artifact-card";c.innerHTML=`<div><strong>${escapeHtml(d.name)}</strong><span>${Math.max(1,Math.round(d.bytes/1024))} KB · 30 min</span></div><a href="${d.downloadUrl}" download>↓ Baixar</a>`;node.appendChild(c);return{role:"tool",tool_call_id:tc.id,content:JSON.stringify(d)}}
 
@@ -5472,7 +5483,7 @@ function clientRuntimeHint(){
 
 function shouldInspectMcpTools(text=""){
   const t=String(text).toLowerCase();
-  return /@[a-z0-9_.-]+|\b(github|supabase|cloudflare|gmail|google drive|slack|stripe|vercel|render|sentry|mcp|conector|connector)\b/i.test(t);
+  return /@[a-z0-9_.-]+|\b(github|supabase|cloudflare|gmail|google drive|google calendar|microsoft|teams|outlook|onedrive|slack|zoom|spotify|apple music|shazam|canva|adobe|stripe|vercel|render|sentry|mcp|conector|connector)\b/i.test(t);
 }
 
 
@@ -6276,6 +6287,16 @@ async function consumeAssistantResponse(res,assistantMsg,contentNode){
   return toolCalls.filter(Boolean);
 }
 
+async function recoverEmptyAssistantText({model,messages,controller}={}){
+  if(!model||!Array.isArray(messages))return "";
+  try{
+    const response=await fetch("/api/inference/chat",safeFetchOptions({method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[...messages,{role:"system",content:"The previous assistant turn produced no user-visible text. Return the final answer as user-visible text now. Do not emit tool calls in this recovery turn."}],stream:false,max_tokens:4096,runtime:clientRuntimeHint()})},controller));
+    if(!response.ok)return "";
+    const data=await response.json().catch(()=>({}));
+    return String(data?.choices?.[0]?.message?.content||data?.choices?.[0]?.text||"").trim();
+  }catch{return ""}
+}
+
 function composeLayeredMessages(chat,requestContext,{toolTurn,memoryBlock}={}){
   const base=toApiMessages(chat,requestContext).slice(0,-1);
   const first=base[0]?.role==="system"?base[0]:null;
@@ -6612,7 +6633,7 @@ async function generateAssistant(chat, requestContext = null) {
       assistantMsg.content=validatedWebAnswer(assistantMsg.content,{results:assistantMsg.webSources});
     }
 
-    if(!assistantMsg.content)assistantMsg.content="A resposta terminou sem conteúdo de texto.";
+    if(!assistantMsg.content){const recovered=await recoverEmptyAssistantText({model:selectedModel,messages,controller});assistantMsg.content=recovered||"A Ava não recebeu texto utilizável do modelo nesta tentativa. Tente regenerar.";}
     if(assistantMsg.finishReason==="length"){
       await continueLongResponse(chat,assistantMsg,selectedModel,requestContext,generationSignal(controller));
     }

@@ -8,6 +8,16 @@ const PRESETS = [
   ["supabase", "Supabase", "MCP_SUPABASE_URL", "MCP_SUPABASE_TOKEN"],
   ["cloudflare", "Cloudflare", "MCP_CLOUDFLARE_URL", "MCP_CLOUDFLARE_TOKEN"],
   ["google-drive", "Google Drive", "MCP_GOOGLE_DRIVE_URL", "MCP_GOOGLE_DRIVE_TOKEN"],
+  ["gmail", "Gmail", "MCP_GMAIL_URL", "MCP_GMAIL_TOKEN"],
+  ["google-calendar", "Google Calendar", "MCP_GOOGLE_CALENDAR_URL", "MCP_GOOGLE_CALENDAR_TOKEN"],
+  ["microsoft", "Microsoft 365", "MCP_MICROSOFT_URL", "MCP_MICROSOFT_TOKEN"],
+  ["slack", "Slack", "MCP_SLACK_URL", "MCP_SLACK_TOKEN"],
+  ["zoom", "Zoom", "MCP_ZOOM_URL", "MCP_ZOOM_TOKEN"],
+  ["spotify", "Spotify", "MCP_SPOTIFY_URL", "MCP_SPOTIFY_TOKEN"],
+  ["apple-music", "Apple Music", "MCP_APPLE_MUSIC_URL", "MCP_APPLE_MUSIC_TOKEN"],
+  ["shazam", "Shazam", "MCP_SHAZAM_URL", "MCP_SHAZAM_TOKEN"],
+  ["canva", "Canva", "MCP_CANVA_URL", "MCP_CANVA_TOKEN"],
+  ["adobe", "Adobe", "MCP_ADOBE_URL", "MCP_ADOBE_TOKEN"],
   ["vercel", "Vercel", "MCP_VERCEL_URL", "MCP_VERCEL_TOKEN"],
   ["render", "Render", "MCP_RENDER_URL", "MCP_RENDER_TOKEN"],
   ["stripe", "Stripe", "MCP_STRIPE_URL", "MCP_STRIPE_TOKEN"],
@@ -20,9 +30,10 @@ function safeId(value) {
 
 function loadRegistry() {
   const servers = [];
+  const DEFAULT_URLS = { gmail: "https://gmailmcp.googleapis.com/mcp/v1", zoom: "https://zoom.us/mcp/meeting/streamable", canva: "https://mcp.canva.com/mcp" };
 
   for (const [id, name, urlEnv, tokenEnv] of PRESETS) {
-    let url = process.env[urlEnv] || "";
+    let url = process.env[urlEnv] || DEFAULT_URLS[id] || "";
     let token = process.env[tokenEnv] || "";
 
     if (id === "lukintosh") {
@@ -30,7 +41,7 @@ function loadRegistry() {
       token = token || process.env.AVA_MCP_GATEWAY_TOKEN || "";
     }
 
-    if (url && (id !== "lukintosh" || token)) {
+    if (url && (id !== "lukintosh" || token) && (!["gmail","zoom","canva"].includes(id) || token)) {
       servers.push({
         id,
         name,
@@ -234,7 +245,7 @@ export async function handleMcp(req, res, url, body = {}) {
       configured: false,
       origin: id === "lukintosh" ? "https://mcp.lukintosh.com" : "",
       preset: true,
-      needsToken: id === "lukintosh"
+      needsToken: ["lukintosh","gmail","zoom","canva"].includes(id)
     }));
     for (const server of registry.filter(s => !s.preset)) all.push(publicServer(server));
     return send(res, 200, { servers: all });
